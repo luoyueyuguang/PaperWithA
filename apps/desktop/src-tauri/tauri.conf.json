@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "PaperWithA",
+  "version": "0.1.0",
+  "identifier": "com.paperwitha.desktop",
+  "build": {
+    "frontendDist": "../../web/dist",
+    "devUrl": "http://localhost:4173"
+  },
+  "app": {
+    "windows": [{ "title": "PaperWithA", "width": 1440, "height": 900, "minWidth": 960, "minHeight": 640 }],
+    "security": { "csp": null }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": ["icons/icon.png", "icons/icon.ico"]
+  }
+}

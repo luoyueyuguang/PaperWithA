@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>PaperWithA Gate 3 Docking Host</title>
+  <style>
+    :root { font-family: sans-serif; color: #172033; }
+    body { margin: 0; background: #eef2f7; }
+    #workspace { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 24px; width: 760px; height: 420px; box-sizing: border-box; }
+    @media (max-width: 600px) { #workspace { grid-template-columns: 1fr; width: 100vw; height: auto; min-height: 760px; } }
+    .panel { position: relative; min-height: 220px; border: 2px solid #8090a8; border-radius: 8px; background: white; }
+    .panel-header { padding: 12px; border-bottom: 1px solid #d6dce6; cursor: grab; user-select: none; font-weight: 700; }
+    .panel-body { padding: 16px; }
+    .drop-target { outline: 4px solid #4f8cff; outline-offset: 4px; }
+    .ghost { position: fixed; z-index: 10; width: 330px; min-height: 150px; padding: 12px; box-sizing: border-box; border: 2px dashed #4f8cff; border-radius: 8px; background: rgb(255 255 255 / 80%); box-shadow: 0 12px 32px rgb(23 32 51 / 20%); pointer-events: none; transform: translate(-50%, -50%) scale(.92); }
+    #status { margin: 0 24px 16px; min-height: 24px; }
+  </style>
+</head>
+<body>
+  <main id="workspace" aria-label="Gate 3 workspace">
+    <section class="panel" data-panel="paper"><div class="panel-header" data-drag-handle="paper">PaperView</div><div class="panel-body">Paper content</div></section>
+    <section class="panel" data-panel="chat"><div class="panel-header" data-drag-handle="chat">Chat</div><div class="panel-body">Chat content</div></section>
+  </main>
+  <button id="popout" type="button">Open popout</button>
+  <p id="status" role="status">idle</p>
+  <script>
+    (() => {
+      const status = document.querySelector('#status');
+      let drag = null;
+      let ghost = null;
+      let popoutOpened = false;
+      let dragStartedAt = 0;
+      let ghostShownAt = 0;
+      const dragMetrics = [];
+      const setStatus = (value) => { status.textContent = value; document.body.dataset.status = value; };
+      const removeGhost = () => { ghost?.remove(); ghost = null; document.querySelector('.drop-target')?.classList.remove('drop-target'); };
+      const onMove = (event) => {
+        if (!drag) return;
+        if (!ghost) {
+          ghost = document.createElement('div');
+          ghost.className = 'ghost';
+          ghost.textContent = drag.panel.dataset.panel + ' preview';
+          document.body.append(ghost);
+          ghostShownAt = performance.now();
+          setStatus('ghost-visible');
+        }
+        ghost.style.left = event.clientX + 'px';
+        ghost.style.top = event.clientY + 'px';
+        const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('.panel');
+        document.querySelector('.drop-target')?.classList.remove('drop-target');
+        if (target && target !== drag.panel) { target.classList.add('drop-target'); setStatus('ghost-visible-targeted'); }
+      };
+      const onUp = (event) => {
+        if (!drag) return;
+        const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('.panel');
+        const applied = target && target !== drag.panel;
+        const completedAt = performance.now();
+        dragMetrics.push({ ghostLatencyMs: ghostShownAt ? ghostShownAt - dragStartedAt : null, dropLatencyMs: completedAt - dragStartedAt, applied: Boolean(applied) });
+        removeGhost();
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
+        drag = null;
+        setStatus(applied ? 'drop-applied' : 'drop-cancelled');
+      };
+      document.querySelectorAll('[data-drag-handle]').forEach((handle) => handle.addEventListener('pointerdown', (event) => {
+        drag = { panel: handle.closest('.panel') };
+        dragStartedAt = performance.now();
+        ghostShownAt = 0;
+        setStatus('drag-started');
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', onUp, { once: true });
+        event.preventDefault();
+      }));
+      document.querySelector('#popout').addEventListener('click', () => {
+        const child = window.open('about:blank', 'paperwitha-gate3-popout', 'popup,width=320,height=240');
+        popoutOpened = Boolean(child);
+        setStatus(popoutOpened ? 'popout-opened' : 'popout-blocked');
+      });
+      window.gate3 = { getState: () => ({ status: document.body.dataset.status, ghostVisible: Boolean(ghost), targetVisible: Boolean(document.querySelector('.drop-target')), popoutOpened, dragMetrics }) };
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+{
+  "probeId": "gate0.sync",
+  "fixtureVersion": "gate0-v1",
+  "status": "pass",
+  "environment": {
+    "node": "20.19.0",
+    "platform": "linux",
+    "arch": "x64"
+  },
+  "input": {
+    "fixture": "offline-duplicate-conflict",
+    "bytes": 216
+  },
+  "metrics": {
+    "sampleCount": 11,
+    "p50Ms": 0.0005279999986669281,
+    "p95Ms": 0.09218800000053307,
+    "p99Ms": 0.09218800000053307
+  },
+  "details": {
+    "localCommitBeforePush": true,
+    "pendingBeforePush": 1,
+    "firstPushStatus": "accepted",
+    "duplicatePushStatus": "duplicate",
+    "conflictStatus": "conflict",
+    "cursorRecovered": true,
+    "replayCount": 1,
+    "apiKeyInEnvelope": false
+  },
+  "errors": []
+}

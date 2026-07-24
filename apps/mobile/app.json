@@ -1,0 +1,10 @@
+{
+  "expo": {
+    "name": "PaperWithA",
+    "slug": "paperwitha",
+    "version": "0.1.0",
+    "orientation": "default",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": ["**/*"]
+  }
+}

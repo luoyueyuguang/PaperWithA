@@ -1,0 +1,8 @@
+{
+  "name": "@paperwitha/plugin-core",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": { "@paperwitha/plugin-contracts": "workspace:*", "@paperwitha/sync": "workspace:*" }
+}

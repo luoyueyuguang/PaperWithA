@@ -1,0 +1,10 @@
+{
+  "name": "@paperwitha/api",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": { "start": "tsx src/http.ts" },
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": { "@paperwitha/sync": "workspace:*" },
+  "devDependencies": { "tsx": "^4.19.2" }
+}

@@ -1,0 +1,35 @@
+{
+  "probeId": "gate0.context",
+  "fixtureVersion": "gate0-v1",
+  "status": "pass",
+  "environment": {
+    "node": "20.19.0",
+    "platform": "linux",
+    "arch": "x64"
+  },
+  "input": {
+    "fixture": "two-documents-with-outsider",
+    "bytes": 367
+  },
+  "metrics": {
+    "sampleCount": 11,
+    "p50Ms": 0.009416000000783242,
+    "p95Ms": 0.208466000000044,
+    "p99Ms": 0.208466000000044
+  },
+  "details": {
+    "selectedSourceIds": [
+      "paper-a-intro",
+      "paper-b-method"
+    ],
+    "omittedSourceIds": [
+      "paper-b-limit"
+    ],
+    "fixedSourceFirst": true,
+    "outsiderExcluded": true,
+    "ordinaryCropExplained": true,
+    "fixedBudgetFailure": true,
+    "repeatable": true
+  },
+  "errors": []
+}

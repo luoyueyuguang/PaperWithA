@@ -1,0 +1,8 @@
+{
+  "name": "@paperwitha/evidence",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": { "@paperwitha/reader-core": "workspace:*" }
+}

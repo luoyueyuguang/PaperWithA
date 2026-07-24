@@ -1,0 +1,30 @@
+{
+  "probeId": "gate0.shared-graph",
+  "fixtureVersion": "gate0-v1",
+  "status": "pass",
+  "environment": {
+    "node": "20.19.0",
+    "platform": "linux",
+    "arch": "x64"
+  },
+  "input": {
+    "fixture": "sharedGraph",
+    "bytes": 1280
+  },
+  "metrics": {
+    "sampleCount": 11,
+    "p50Ms": 0.001012000000628177,
+    "p95Ms": 0.12044699999933073,
+    "p99Ms": 0.12044699999933073
+  },
+  "details": {
+    "graphIdentityShared": true,
+    "parseCalls": 1,
+    "firstViewPage": 8,
+    "secondViewPage": 2,
+    "firstViewZoom": 1.2,
+    "secondViewZoom": 0.9,
+    "graphPages": 20
+  },
+  "errors": []
+}
