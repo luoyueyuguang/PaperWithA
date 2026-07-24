@@ -12,7 +12,9 @@
   "dependencies": {
     "@babel/runtime": "^7.25.0",
     "@expo/metro-runtime": "~4.0.1",
-    "@paperwitha/platform": "workspace:*",
+    "@paperwitha/agent-core": "workspace:*",
+    "@paperwitha/domain": "workspace:*",
+    "@paperwitha/reader-core": "workspace:*",
     "expo": "^52.0.0",
     "react": "^18.3.1",
     "react-dom": "18.3.1",
