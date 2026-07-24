@@ -615,80 +615,42 @@ async function runOcr(pageNumber: number): Promise<void> {
   render();
 }
 
-function exportWorkspace(): void {
-  const blobPayload = {
-    manifest: {
-      format: "paperwitha.v1" as const,
-      exportedAt: new Date().toISOString(),
-      appVersion: "0.1.0",
-      papers: state.papers.map((paper) => ({
-        id: paper.id,
-        title: paper.title,
-        sourceName: paper.sourceName,
-        graph: {
-          graphId: paper.graph.graphId,
-          documentId: paper.graph.documentId,
-          documentVersionId: paper.graph.documentVersionId,
-          blobHash: paper.graph.blobHash,
-          pageCount: paper.graph.pages.length,
-        },
-        annotationCount: paper.annotations.length,
-        inkStrokeCount: state.inkStrokes.filter((s) => s.documentId === paper.graph.documentId && !s.deletedAt).length,
-        view: {
-          scrollAnchor: paper.view.scrollAnchor ?? null,
-          zoom: paper.view.zoom,
-        },
-      })),
-      sessions: state.agentWorkspace.sessions.map((s) => ({
-        sessionId: s.sessionId,
-        title: s.title,
-        agentProfileId: s.agentProfileId,
-        runtimeProfileId: s.runtimeProfileId,
-        messageCount: s.branches.reduce((sum, b) => sum + b.messages.length, 0),
-        runCount: s.branches.reduce((sum, b) => sum + b.runs.length, 0),
-        branchCount: s.branches.length,
-        status: s.status,
-      })),
-    },
-    state: state,
-  };
-  const json = JSON.stringify(blobPayload, null, 2);
-  const blob = new Blob([json], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `paperwitha-workspace-${new Date().toISOString().slice(0, 10)}.json`;
-  anchor.click();
+async function exportWorkspace(): Promise<void> {
+  const blobs: Record<string, string> = {};
+  for (const paper of state.papers) {
+    if (paper.graph.blobHash) {
+      const bytes = await blobStore.get(paper.graph.blobHash);
+      if (bytes) blobs[paper.graph.blobHash] = btoa(String.fromCharCode(...bytes));
+    }
+  }
+  const payload = { format: "paperwitha.v1" as const, exportedAt: new Date().toISOString(), blobs, state };
+  const json = JSON.stringify(payload);
+  const fileBlob = new Blob([json], { type: "application/json" });
+  const url = URL.createObjectURL(fileBlob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `paperwitha-${new Date().toISOString().slice(0, 10)}.json`; a.click();
   URL.revokeObjectURL(url);
 }
 
 async function importWorkspace(file: File): Promise<void> {
   try {
     const text = await file.text();
-    const blob = JSON.parse(text);
-    if (!blob.manifest?.format?.startsWith("paperwitha.")) throw new Error("not a valid paperwitha export file");
-    if (!blob.state?.papers) throw new Error("export file is missing papers");
-    const imported = blob.state as AppState;
+    const payload = JSON.parse(text);
+    if (payload.format !== "paperwitha.v1") throw new Error("not a valid paperwitha export");
+    const imported = payload.state as AppState;
+    if (payload.blobs) {
+      for (const [hash, b64] of Object.entries(payload.blobs as Record<string, string>)) {
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        await blobStore.put(bytes);
+      }
+    }
     if (imported.papers) state.papers = imported.papers;
     if (imported.agentWorkspace) state.agentWorkspace = imported.agentWorkspace;
     if (imported.inkStrokes) state.inkStrokes = imported.inkStrokes;
-    state.selectedText = "";
-    state.selectedPage = null;
-    saveState();
-    render();
-    window.alert(`Imported ${state.papers.length} paper(s) and ${state.agentWorkspace.sessions.length} session(s).`);
-  } catch (error) {
-    window.alert(`Import failed: ${error instanceof Error ? error.message : String(error)}`);
-  }
-}
-
-async function importFile(file: File) {
-  try {
-    const graph = await parseFile(file);
-    addPaper(makePaper(file.name.replace(/\.[^.]+$/, ""), file.name, graph));
-  } catch (error) {
-    window.alert(`Could not read this paper: ${error instanceof Error ? error.message : String(error)}`);
-  }
+    state.selectedText = ""; state.selectedPage = null;
+    saveState(); render();
+    window.alert(`Imported ${state.papers.length} paper(s), ${state.agentWorkspace.sessions.length} session(s).`);
+  } catch (error) { window.alert(`Import failed: ${error instanceof Error ? error.message : String(error)}`); }
 }
 
 function updateSelectionToolbar() {
