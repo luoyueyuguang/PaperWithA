@@ -11,6 +11,10 @@
     "windows": [{ "title": "PaperWithA", "width": 1440, "height": 900, "minWidth": 960, "minHeight": 640 }],
     "security": { "csp": null }
   },
+  "plugins": {
+    "fs": { "scope": { "allow": ["$APPDATA/**", "$HOME/Documents/**", "$HOME/Downloads/**"], "deny": [] } },
+    "sql": { "preload": { "db": "sqlite:paperwitha.db" } }
+  },
   "bundle": {
     "active": true,
     "targets": "all",

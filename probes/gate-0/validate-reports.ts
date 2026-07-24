@@ -40,7 +40,7 @@ const EXPECTED_PROBE_IDS: readonly string[] = [
   "gate0.docking",
   "gate0.provider",
   "gate0.context",
-  "gate0.sync",
+  "gate0.local-sessions",
 ];
 
 const VALID_STATUSES: readonly string[] = ["pass", "fail", "blocked"];

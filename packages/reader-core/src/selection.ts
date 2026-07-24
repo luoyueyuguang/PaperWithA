@@ -15,12 +15,14 @@ export interface EvidenceAnchor {
   pageId: string;
   nodeId: string;
   range: { start: number; end: number };
+  bbox?: { x: number; y: number; width: number; height: number };
   endPageId: string;
   endNodeId: string;
   endRange: { start: number; end: number };
+  endBbox?: { x: number; y: number; width: number; height: number };
   validity: "valid" | "stale" | "invalid";
   confidence: number;
-} 
+}
 
 export function createCrossPageAnchor(
   graph: DocumentGraph,

@@ -8,6 +8,7 @@ function graph(documentVersionId: string): DocumentGraph {
     documentId: "doc-1",
     documentVersionId,
     pages: [{ pageId: "p1", pageNumber: 1, text: "page" }],
+      blobHash: null,
   };
 }
 

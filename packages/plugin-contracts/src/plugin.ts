@@ -1,14 +1,23 @@
-import type { SyncPort } from "@paperwitha/sync";
+export type PluginType =
+  | "agent-runtime"
+  | "ai-provider"
+  | "importer"
+  | "exporter"
+  | "reader-adapter"
+  | "analysis"
+  | "reading-brief";
 
 export interface PluginManifest {
   pluginId: string;
   version: string;
+  apiVersion: string;
+  pluginType: PluginType;
   capabilities: string[];
 }
 
-export interface SyncPlugin {
+export interface PluginLifecycle {
   manifest: PluginManifest;
-  start(port: SyncPort): Promise<void>;
+  start(): Promise<void>;
   pause(): Promise<void>;
   stop(): Promise<void>;
 }

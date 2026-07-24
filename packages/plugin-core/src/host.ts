@@ -1,29 +1,47 @@
-import type { PluginManifest, SyncPlugin } from "@paperwitha/plugin-contracts";
-import type { SyncPort } from "@paperwitha/sync";
+import type { PluginLifecycle, PluginManifest } from "@paperwitha/plugin-contracts";
 
 export class PluginHost {
-  private readonly plugins = new Map<string, SyncPlugin>();
-  private activeSyncPluginId: string | null = null;
+  private readonly plugins = new Map<string, PluginLifecycle>();
+  private readonly activePluginIds = new Set<string>();
 
-  install(plugin: SyncPlugin): void { this.plugins.set(plugin.manifest.pluginId, plugin); }
-  uninstall(pluginId: string): Promise<void> | undefined {
-    const plugin = this.plugins.get(pluginId);
-    this.plugins.delete(pluginId);
-    if (this.activeSyncPluginId === pluginId) this.activeSyncPluginId = null;
-    return plugin?.stop();
+  install(plugin: PluginLifecycle): void {
+    if (this.plugins.has(plugin.manifest.pluginId)) throw new Error(`plugin already installed: ${plugin.manifest.pluginId}`);
+    this.plugins.set(plugin.manifest.pluginId, plugin);
   }
-  manifests(): PluginManifest[] { return [...this.plugins.values()].map((plugin) => plugin.manifest); }
-  async activateSync(pluginId: string, port: SyncPort): Promise<void> {
-    if (this.activeSyncPluginId && this.activeSyncPluginId !== pluginId) throw new Error("only one sync plugin may be active for a workspace");
+
+  async uninstall(pluginId: string): Promise<void> {
+    const plugin = this.plugins.get(pluginId);
+    if (!plugin) return;
+    await plugin.stop();
+    this.activePluginIds.delete(pluginId);
+    this.plugins.delete(pluginId);
+  }
+
+  manifests(): PluginManifest[] {
+    return [...this.plugins.values()].map((plugin) => plugin.manifest);
+  }
+
+  async activate(pluginId: string): Promise<void> {
+    if (this.activePluginIds.has(pluginId)) return;
     const plugin = this.plugins.get(pluginId);
     if (!plugin) throw new Error(`plugin not installed: ${pluginId}`);
-    await plugin.start(port);
-    this.activeSyncPluginId = pluginId;
+    await plugin.start();
+    this.activePluginIds.add(pluginId);
   }
-  async pauseSync(): Promise<void> {
-    if (!this.activeSyncPluginId) return;
-    await this.plugins.get(this.activeSyncPluginId)?.pause();
-    this.activeSyncPluginId = null;
+
+  async pause(pluginId: string): Promise<void> {
+    if (!this.activePluginIds.has(pluginId)) return;
+    const plugin = this.plugins.get(pluginId);
+    if (!plugin) return;
+    await plugin.pause();
+    this.activePluginIds.delete(pluginId);
   }
-  get activeSyncTarget(): string | null { return this.activeSyncPluginId; }
+
+  isActive(pluginId: string): boolean {
+    return this.activePluginIds.has(pluginId);
+  }
+
+  get activePlugins(): string[] {
+    return [...this.activePluginIds];
+  }
 }

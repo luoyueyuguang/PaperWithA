@@ -155,7 +155,7 @@ describe("Gate 0 Report Validation", () => {
   });
 
   it("fails on a blocked report with empty errors array", () => {
-    const probeFile = join(REPORTS_DIR, "gate0.sync.json");
+    const probeFile = join(REPORTS_DIR, "gate0.local-sessions.json");
     const original = readFileSync(probeFile, "utf8");
     const originalObj = JSON.parse(original);
     const tampered = { ...originalObj, status: "blocked" };

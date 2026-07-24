@@ -5,7 +5,7 @@ import { runSharedGraphProbe } from "./shared-graph.js";
 import { runDockviewProbe } from "./dockview.js";
 import { runProviderProbe } from "./provider.js";
 import { runContextProbe } from "./context.js";
-import { runSyncProbe } from "./sync.js";
+import { runLocalSessionsProbe } from "./local-sessions.js";
 
 const reportsDirectory = join(process.cwd(), "probes/gate-0/reports/gate0-v1");
 
@@ -15,7 +15,7 @@ const availableProbes = [
   { id: "docking", status: "implemented" },
   { id: "provider", status: "implemented" },
   { id: "context", status: "implemented" },
-  { id: "sync", status: "implemented" },
+  { id: "local-sessions", status: "implemented" },
 ] as const;
 
 async function main(): Promise<void> {
@@ -34,7 +34,7 @@ async function main(): Promise<void> {
     else if (probeId === "docking") reports.push(await runDockviewProbe());
     else if (probeId === "provider") reports.push(await runProviderProbe());
     else if (probeId === "context") reports.push(await runContextProbe());
-    else if (probeId === "sync") reports.push(await runSyncProbe());
+    else if (probeId === "local-sessions") reports.push(await runLocalSessionsProbe());
     else throw new Error(`Probe ${probeId} is not implemented yet`);
   }
 

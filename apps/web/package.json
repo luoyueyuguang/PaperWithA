@@ -8,13 +8,13 @@
     "build": "vite build"
   },
   "dependencies": {
+    "@paperwitha/agent-core": "workspace:*",
     "@paperwitha/ai-core": "workspace:*",
     "@paperwitha/context": "workspace:*",
     "@paperwitha/domain": "workspace:*",
     "@paperwitha/evidence": "workspace:*",
     "@paperwitha/reader-core": "workspace:*",
     "@paperwitha/storage": "workspace:*",
-    "@paperwitha/sync": "workspace:*",
     "pdfjs-dist": "^4.10.38"
   }
 }

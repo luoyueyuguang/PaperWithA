@@ -1,0 +1,90 @@
+{
+  "probeId": "gate0.local-sessions",
+  "fixtureVersion": "gate0-v1",
+  "status": "pass",
+  "environment": {
+    "node": "20.19.0",
+    "platform": "linux",
+    "arch": "x64"
+  },
+  "input": {
+    "fixture": "two runtimes, two sessions, isolated context snapshots",
+    "bytes": 1294
+  },
+  "metrics": {
+    "sampleCount": 20,
+    "p50Ms": 0.009714000000030865,
+    "p95Ms": 0.09119200000009187,
+    "p99Ms": 0.09550400000011905
+  },
+  "details": {
+    "sessionCount": 2,
+    "isolatedContexts": true,
+    "concurrentSessionRuns": true,
+    "snapshotsStable": true,
+    "orderedEvents": true,
+    "samples": [
+      {
+        "operationMs": 0.05199099999981627
+      },
+      {
+        "operationMs": 0.01768099999981132
+      },
+      {
+        "operationMs": 0.018588000000136162
+      },
+      {
+        "operationMs": 0.013032000000066546
+      },
+      {
+        "operationMs": 0.009714000000030865
+      },
+      {
+        "operationMs": 0.008491999999932887
+      },
+      {
+        "operationMs": 0.09550400000011905
+      },
+      {
+        "operationMs": 0.028287999999975
+      },
+      {
+        "operationMs": 0.02277900000012778
+      },
+      {
+        "operationMs": 0.009453000000121392
+      },
+      {
+        "operationMs": 0.09119200000009187
+      },
+      {
+        "operationMs": 0.01636000000007698
+      },
+      {
+        "operationMs": 0.004226000000016938
+      },
+      {
+        "operationMs": 0.003061999999999898
+      },
+      {
+        "operationMs": 0.0028690000001461158
+      },
+      {
+        "operationMs": 0.002805999999964115
+      },
+      {
+        "operationMs": 0.0028380000001106964
+      },
+      {
+        "operationMs": 0.0029630000001361623
+      },
+      {
+        "operationMs": 0.017310999999835985
+      },
+      {
+        "operationMs": 0.0036920000000009168
+      }
+    ]
+  },
+  "errors": []
+}

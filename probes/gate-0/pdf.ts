@@ -173,6 +173,7 @@ async function inspectProfile(profile: PdfProfile, timings: number[]): Promise<P
     documentId: `document-fixture-${profile.profile.toLowerCase()}`,
     documentVersionId: `document-fixture-${profile.profile.toLowerCase()}-v1`,
     pages,
+    blobHash: null,
   };
   const firstText = pages[0]?.text ?? "";
   const lastText = pages[1]?.text ?? "";

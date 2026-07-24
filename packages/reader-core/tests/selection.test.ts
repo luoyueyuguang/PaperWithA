@@ -12,6 +12,7 @@ describe("createCrossPageAnchor", () => {
         { pageId: "page-1", pageNumber: 1, text: "first page" },
         { pageId: "page-2", pageNumber: 2, text: "second page" },
       ],
+      blobHash: null,
     }; 
 
     const anchor = createCrossPageAnchor(graph, {
@@ -40,6 +41,7 @@ describe("createCrossPageAnchor", () => {
       documentId: "doc-1",
       documentVersionId: "version-1",
       pages: [{ pageId: "page-1", pageNumber: 1, text: "first page" }],
+      blobHash: null,
     };
 
     expect(() => createCrossPageAnchor(graph, {

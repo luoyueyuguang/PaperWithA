@@ -15,6 +15,7 @@ export interface DocumentGraph {
   documentId: string;
   documentVersionId: string;
   pages: readonly DocumentPage[];
+  blobHash: string | null;
 }
 
 export interface DocumentVersion {

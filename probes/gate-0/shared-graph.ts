@@ -30,6 +30,7 @@ export async function runSharedGraphProbe(): Promise<ProbeReport<SharedGraphProb
         pageNumber: index + 1,
         text: `Shared graph page ${index + 1}`,
       })),
+      blobHash: null,
     };
   };
 
