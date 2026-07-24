@@ -69,7 +69,7 @@ const styles = StyleSheet.create({
   heading: { marginTop: 18, color: "#172943", fontFamily: "Georgia", fontSize: 38, fontWeight: "400", letterSpacing: -1 },
   copy: { marginTop: 14, color: "#6b7d95", fontSize: 14, lineHeight: 22 },
   primary: { marginTop: 28, padding: 16, borderRadius: 12, backgroundColor: "#c9f269", alignItems: "center" },
-  primaryText: { color: "#15200c", fontSize: 15, fontWeight: "750" },
+  primaryText: { color: "#15200c", fontSize: 15, fontWeight: "700" },
   tabs: { flexDirection: "row", gap: 22, marginTop: 18, marginBottom: 18 },
   tab: { color: "#8c9cb3", fontSize: 13, fontWeight: "700", paddingBottom: 6 },
   activeTab: { color: "#172943", borderBottomWidth: 2, borderBottomColor: "#c9f269" },
