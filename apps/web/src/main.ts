@@ -26,249 +26,70 @@ import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 import { createWorker } from "tesseract.js";
 import { BrowserStoragePort, JsonRepository, StoragePortBlobStore } from "@paperwitha/storage";
-import { createAnnotation, type Annotation } from "@paperwitha/evidence";
-var shellWs: WebSocket | null = null;
+import type { Terminal as XtermTerminal } from "xterm";
+import type { FitAddon as XtermFitAddon } from "@xterm/addon-fit";
 
-function initShell(): void {
+var term: XtermTerminal | null = null;
+var termFit: XtermFitAddon | null = null;
+var termWs: WebSocket | null = null;
+
+async function initShell(): Promise<void> {
   var container = document.querySelector<HTMLElement>("#xterm-container");
   if (!container) return;
-  container.innerHTML = "<div class='shell-output' id='shell-output'></div><div class='shell-input-wrap'><span class='shell-prompt'>$</span><input class='shell-input' id='shell-input' autofocus /></div>";
-  var output = document.querySelector<HTMLElement>("#shell-output")!;
-  var input = document.querySelector<HTMLInputElement>("#shell-input")!;
+  if (term) { term.dispose(); term = null; }
 
-  function shellWrite(text: string) {
-    output.textContent += text;
-    output.scrollTop = output.scrollHeight;
-  }
+  var [{ Terminal }, { FitAddon }] = await Promise.all([
+    import("xterm"),
+    import("@xterm/addon-fit"),
+  ]);
+
+  term = new Terminal({
+    fontSize: 13,
+    fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+    theme: { background: "#0a101d", foreground: "#c8d4e6", cursor: "#c9f269" },
+    cursorBlink: true,
+  });
+  termFit = new FitAddon();
+  term.loadAddon(termFit);
+  term.open(container);
+  termFit.fit();
 
   function connect() {
-    if (shellWs) { try { shellWs.close(); } catch (_) {} }
-    shellWs = new WebSocket("ws://localhost:4121");
-    shellWs.onopen = function () { shellWrite("\n"); };
-    shellWs.onmessage = function (e) { shellWrite(e.data); };
-    shellWs.onclose = function () { shellWrite("\n[disconnected]\n"); setTimeout(connect, 3000); };
-    shellWs.onerror = function () { shellWrite("\n[error]\n"); };
+    if (termWs) { try { termWs.close(); } catch {} }
+    termWs = new WebSocket("ws://localhost:4121");
+    termWs.onopen = function () { term?.write(""); };
+    termWs.onmessage = function (e) { term?.write(e.data); };
+    termWs.onclose = function () { setTimeout(connect, 2000); };
+    termWs.onerror = function () { setTimeout(connect, 2000); };
   }
 
-  input.addEventListener("keydown", function (e) {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      var text = input.value;
-      input.value = "";
-      if (shellWs?.readyState === WebSocket.OPEN) shellWs.send(text + "\n");
-    }
+  term.onData(function (data: string) {
+    if (termWs?.readyState === WebSocket.OPEN) termWs.send(data);
   });
 
   connect();
+
+  new ResizeObserver(function () { try { termFit?.fit(); } catch {} }).observe(container);
 }
 
 
 import { ProviderClient } from "@paperwitha/ai-core";
 
-const blobStore = new StoragePortBlobStore();
-/** Cached text items with positions for text layer rendering. Key = `${blobHash}:${pageNumber}` */
-const textItemCache = new Map<string, Array<{ str: string; x: number; y: number; width: number; height: number; fontSize: number }>>();
-import { createInkStroke, canvasToNormalized, type InkStroke, type InkTool } from "@paperwitha/domain";
-
-let inkStrokes: InkStroke[] = [];
-const ocrProgress = new Map<string, string>(); // pageId → status
-let inkTool: InkTool = "pen";
-let inkColor = "#1a3a5c";
-let inkWidth = 0.004;
-let activeInkStroke: { points: Array<{ x: number; y: number; pressure?: number; timestampMs: number }>; canvasEl: HTMLCanvasElement | null; pageNumber: number; pageWidth: number; pageHeight: number } | null = null;
-type StoredPaper = {
-  id: string;
-  title: string;
-  sourceName: string;
-  graph: DocumentGraph;
-  view: PaperViewState;
-  annotations: Annotation[];
-  brief: string;
-  briefVersions: ReadingBriefVersion[];
-  addedAt: string;
-};
-
-type AppState = {
-  papers: StoredPaper[];
-  activePaperId: string | null;
-  activeTab: "agents" | "brief";
-  sidebarOpen: boolean;
-  assistantOpen: boolean;
-  splitRatio: number;
-  selectedText: string;
-  selectedPage: number | null;
-  agentWorkspace: AgentWorkspaceState;
-  inkStrokes: InkStroke[];
-};
-
-type LegacyMessage = { id: string; role: "user" | "assistant"; text: string; createdAt: string };
-type LegacyPaper = StoredPaper & { chat?: LegacyMessage[] };
-type PersistedState = Omit<Partial<AppState>, "papers" | "activeTab"> & {
-  papers?: LegacyPaper[];
-  activeTab?: "chat" | "agents" | "brief";
-  contextSourceIds?: string[];
-  contextTexts?: Record<string, string>;
-};
-type ProviderConfig = { endpoint: string; model: string; apiKey: string; enabled: boolean };
-
-const STORAGE_KEY = "paperwitha.web.v2";
-const LEGACY_STORAGE_KEY = "paperwitha.web.v1";
-const LOCAL_RUNTIME_PROFILE_ID = "paperwitha-local-runtime";
-const LOCAL_AGENT_PROFILE_ID = "paperwitha-evidence-agent";
-
-interface RuntimeProfileMeta {
-  id: string;
-  name: string;
-  adapterKind: string;
-  icon: string;
-}
-interface AgentProfileMeta {
-  id: string;
-  name: string;
-  runtimeId: string;
-  description: string;
-  defaultModel: string | null;
-}
-const RUNTIME_PROFILES: readonly RuntimeProfileMeta[] = [
-  { id: "paperwitha-local-runtime", name: "Local Evidence Agent", adapterKind: "embedded", icon: "◎" },
-  { id: "omp-rpc", name: "OMP", adapterKind: "omp-rpc", icon: "○" },
-  { id: "pi-rpc", name: "Pi", adapterKind: "pi-rpc", icon: "π" },
-  { id: "opencode-http", name: "OpenCode", adapterKind: "opencode-http", icon: "◇" },
-];
-const AGENT_PROFILES: readonly AgentProfileMeta[] = [
-  { id: "paperwitha-evidence-agent", name: "Evidence Agent", runtimeId: "paperwitha-local-runtime", description: "Local evidence-based answers", defaultModel: null },
-  { id: "omp-task", name: "OMP Task Agent", runtimeId: "omp-rpc", description: "General-purpose coding and research agent", defaultModel: null },
-  { id: "pi-coding-agent", name: "Pi Coding Agent", runtimeId: "pi-rpc", description: "Interactive coding agent with tool calling", defaultModel: null },
-  { id: "opencode-task", name: "OpenCode Agent", runtimeId: "opencode-http", description: "Headless OpenCode agent", defaultModel: null },
-];
-function runtimeMeta(id: string): RuntimeProfileMeta { return RUNTIME_PROFILES.find((r) => r.id === id) ?? RUNTIME_PROFILES[0]!; }
-function agentMeta(id: string): AgentProfileMeta { return AGENT_PROFILES.find((a) => a.id === id) ?? AGENT_PROFILES[0]!; }
-const app = document.querySelector<HTMLDivElement>("#app")!;
-const uid = (prefix: string) => `${prefix}-${crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
-const escapeHtml = (value: string) => value.replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character] ?? character);
-const stateRepository = new JsonRepository<PersistedState>(new BrowserStoragePort(), STORAGE_KEY);
-const legacyStateRepository = new JsonRepository<PersistedState>(new BrowserStoragePort(), LEGACY_STORAGE_KEY);
-const emptyState = (): AppState => ({ papers: [], activePaperId: null, activeTab: "agents", sidebarOpen: true, assistantOpen: true, splitRatio: 0.55, selectedText: "", selectedPage: null, agentWorkspace: createAgentWorkspace(), inkStrokes: [] });
-
-const demoText = `Attention Is All You Need
-
-Abstract
-The dominant sequence transduction models are based on complex recurrent or convolutional neural networks. We propose a new simple network architecture, the Transformer, based solely on attention mechanisms. Experiments on two machine translation tasks show that these models are superior in quality while being more parallelizable and requiring significantly less time to train.
-
-1 Introduction
-Recurrent neural networks, long short-term memory and gated recurrent neural networks have been firmly established as state of the art approaches in sequence modeling and transduction problems such as language modeling and machine translation. The Transformer follows a different path: it relies entirely on attention to draw global dependencies between input and output.
-
-2 Background
-The goal of reducing sequential computation also forms the foundation of the Extended Neural GPU, ByteNet and ConvS2S. The Transformer achieves parallelization by using self-attention, connecting all positions in a sequence with a constant number of operations.
-
-3 Model Architecture
-The Transformer uses stacked self-attention and point-wise, fully connected layers in both the encoder and decoder. The encoder maps a sequence of symbol representations to a sequence of continuous representations. The decoder generates one output symbol at a time.
-
-4 Why Self-Attention
-Self-attention, sometimes called intra-attention, relates different positions in a single sequence. It is useful for discovering long-range dependencies and can be computed in parallel.`;
-
-let state = loadState();
-let providerConfig: ProviderConfig | null = null;
-let selectionToolbar: HTMLDivElement | null = null;
-
-function makeInitialSession(paper: StoredPaper, index: number, now: string): AgentSession {
-  return createAgentSession({
-    sessionId: uid("session"),
-    branchId: uid("branch"),
-    title: `${paper.title} · ${index + 1}`,
-    agentProfileId: LOCAL_AGENT_PROFILE_ID,
-    runtimeProfileId: LOCAL_RUNTIME_PROFILE_ID,
-    context: { documentIds: [paper.graph.documentId] },
-    now,
-  });
-}
-
-function migrateWorkspace(parsed: PersistedState, papers: StoredPaper[], legacyPapers: LegacyPaper[]): AgentWorkspaceState {
-  if (parsed.agentWorkspace && Array.isArray(parsed.agentWorkspace.sessions)) return parsed.agentWorkspace;
-  let workspace = createAgentWorkspace();
-  const now = new Date().toISOString();
-  legacyPapers.forEach((legacyPaper, index) => {
-    const paper = papers[index];
-    if (!paper || !legacyPaper.chat?.length) return;
-    let session = makeInitialSession(paper, workspace.sessions.length, now);
-    for (const message of legacyPaper.chat) {
-      session = appendAgentMessage(session, {
-        messageId: message.id,
-        role: message.role,
-        text: message.text,
-        createdAt: message.createdAt,
-        runId: null,
-      });
-    }
-    workspace = addAgentSession(workspace, session);
-  });
-  const activePaper = papers.find((paper) => paper.id === parsed.activePaperId) ?? papers[0];
-  if (workspace.sessions.length === 0 && activePaper) workspace = addAgentSession(workspace, makeInitialSession(activePaper, 0, now));
-  if (activePaper && parsed.contextSourceIds?.length) {
-    const active = workspace.sessions.find((session) => session.sessionId === workspace.activeSessionId);
-    if (active) {
-      const migrated = updateAgentSessionContext(active, {
-        documentIds: [activePaper.graph.documentId],
-        fixedSourceIds: [...parsed.contextSourceIds],
-        sourceTexts: { ...(parsed.contextTexts ?? {}) },
-        retrievalVersion: "local-lexical-v1",
-      }, now);
-      workspace = replaceAgentSession(workspace, migrated);
-    }
-  }
-  return workspace;
-}
-
-function loadState(): AppState {
-  const current = stateRepository.read({});
-  const parsed = current.papers ? current : legacyStateRepository.read({});
-  const legacyPapers = Array.isArray(parsed.papers) ? parsed.papers : [];
-  const papers = legacyPapers.map((legacyPaper) => {
-    const { chat: _legacyChat, ...paper } = legacyPaper;
-    return { ...paper, annotations: paper.annotations ?? [] };
-  });
-  const next: AppState = {
-    papers,
-    activePaperId: parsed.activePaperId ?? papers[0]?.id ?? null,
-    activeTab: parsed.activeTab === "brief" ? "brief" : "agents",
-    sidebarOpen: parsed.sidebarOpen ?? true,
-    assistantOpen: parsed.assistantOpen ?? true,
-    selectedText: "",
-    selectedPage: null,
-    agentWorkspace: migrateWorkspace(parsed, papers, legacyPapers),
-    splitRatio: typeof parsed.splitRatio === "number" && parsed.splitRatio > 0.2 && parsed.splitRatio < 0.85 ? parsed.splitRatio : 0.55,
-  };
-  stateRepository.write(next);
-  return next;
-}
-
-function saveState() {
-  stateRepository.write(state);
-}
-
-function activePaper(): StoredPaper | null {
-  return state.papers.find((paper) => paper.id === state.activePaperId) ?? state.papers[0] ?? null;
-}
-
-function activeSession(): AgentSession | null {
-  return state.agentWorkspace.sessions.find((session) => session.sessionId === state.agentWorkspace.activeSessionId && session.status !== "archived") ?? null;
-}
-
-function storeSession(session: AgentSession, persist = true) {
-  state.agentWorkspace = replaceAgentSession(state.agentWorkspace, session);
-  if (persist) saveState();
-}
-
-function createSessionForPaper(paper: StoredPaper): AgentSession {
-  const session = makeInitialSession(paper, state.agentWorkspace.sessions.filter((candidate) => candidate.status !== "archived").length, new Date().toISOString());
-  state.agentWorkspace = addAgentSession(state.agentWorkspace, session);
-  saveState();
-  return session;
-}
-
-function ensureActiveSession(paper: StoredPaper): AgentSession {
-  return activeSession() ?? createSessionForPaper(paper);
-}
+import {
+  state, app, uid, escapeHtml, saveState,
+  activePaper, activeSession, storeSession, createSessionForPaper, ensureActiveSession,
+  addPaper, replaceCapturedSession, demoText,
+  runtimeMeta, agentMeta, emptyState,
+  blobStore, textItemCache,
+  inkStrokes, inkTool, inkColor, inkWidth, activeInkStroke,
+  ocrProgress,
+  providerConfig, selectionToolbar,
+  setProviderConfig, setSelectionToolbar, setInkTool, setInkColor, setActiveInkStroke,
+  RUNTIME_PROFILES, AGENT_PROFILES,
+  LOCAL_RUNTIME_PROFILE_ID, LOCAL_AGENT_PROFILE_ID, STORAGE_KEY,
+  type StoredPaper, type AppState, type PersistedState, type ProviderConfig,
+  type RuntimeProfileMeta, type AgentProfileMeta,
+} from "./state.js";
 
 function splitTextIntoPages(text: string): DocumentPage[] {
   const lines = text.replace(/\r\n/g, "\n").split("\n");
@@ -321,6 +142,7 @@ async function importFile(file: File): Promise<void> {
     const graph = await parseFile(file);
     const title = file.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " ");
     addPaper(makePaper(title, file.name, graph));
+    render();
   } catch (error) {
     console.error("Import failed:", error);
     window.alert(`Failed to import paper: ${error instanceof Error ? error.message : String(error)}`);
@@ -366,14 +188,6 @@ function createDemoPaper() {
   const pages = splitTextIntoPages(demoText).map((page, index) => ({ ...page, pageId: `${documentId}:page:${index + 1}` }));
   const graph: DocumentGraph = { graphId: uid("graph"), documentId, documentVersionId: `${documentId}:v1`, pages, blobHash: null };
   addPaper(makePaper("Attention Is All You Need", "demo-paper.txt", graph));
-}
-
-function addPaper(paper: StoredPaper) {
-  state.papers = [paper, ...state.papers.filter((candidate) => candidate.graph.documentId !== paper.graph.documentId)];
-  state.activePaperId = paper.id;
-  state.selectedText = "";
-  state.selectedPage = null;
-  createSessionForPaper(paper);
   render();
 }
 
@@ -417,7 +231,7 @@ function addSelectionToSession(paper: StoredPaper, text: string): AgentSession {
 
 function render() {
   selectionToolbar?.remove();
-  selectionToolbar = null;
+  setSelectionToolbar(null);
   const paper = activePaper();
   app.innerHTML = `
     <div class="app-shell ${state.sidebarOpen ? "sidebar-open" : "sidebar-closed"} ${state.assistantOpen ? "assistant-open" : "assistant-closed"}">
@@ -429,7 +243,7 @@ function render() {
         <aside class="sidebar">
           <div class="sidebar-heading"><span>LIBRARY</span><strong>${state.papers.length}</strong></div>
           <button class="demo-card" id="add-demo-card"><span class="demo-icon">✦</span><span><strong>Try the demo paper</strong><small>Explore without uploading</small></span></button>
-          <div class="library-list">${state.papers.length ? state.papers.map((candidate) => `<button class="paper-item ${candidate.id === paper?.id ? "active" : ""}" data-paper-id="${candidate.id}"><span class="paper-icon">▤</span><span class="paper-item-copy"><strong>${escapeHtml(candidate.title)}</strong><small>${escapeHtml(candidate.sourceName)} · ${candidate.graph.pages.length} pages</small></span></button>`).join("") : `<div class="empty-library"><div class="empty-icon">⌁</div><strong>Your library is empty</strong><span>Import a paper to begin.</span></div>`}</div>
+          <div class="library-list">${state.papers.length ? state.papers.map((candidate) => `<div class="paper-item ${candidate.id === paper?.id ? "active" : ""}" data-paper-id="${candidate.id}"><span class="paper-icon">▤</span><span class="paper-item-copy"><strong>${escapeHtml(candidate.title)}</strong><small>${escapeHtml(candidate.sourceName)} · ${candidate.graph.pages.length} pages</small></span><button class="paper-del-btn" data-delete-paper="${candidate.id}" title="Remove">&times;</button></div>`).join("") : `<div class="empty-library"><div class="empty-icon">⌁</div><strong>Your library is empty</strong><span>Import a paper to begin.</span></div>`}</div>
           ${state.papers.length ? `<div class="sidebar-actions"><button class="ghost-button" id="clear-library">Clear local library</button><button class="ghost-button" id="export-workspace" title="Export entire workspace as .paperwitha">Export</button><label class="ghost-button"><input id="import-workspace" type="file" accept=".json" hidden />Import</label></div>` : ""}
         </aside>
         <button class="sidebar-edge-toggle" id="toggle-sidebar" title="${state.sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}">${state.sidebarOpen ? "◀" : "▶"}</button>
@@ -494,12 +308,12 @@ function renderBrief(paper: StoredPaper) {
 
 function configureProvider() {
   const endpoint = window.prompt("Provider endpoint (blank disables remote AI)", providerConfig?.endpoint ?? "")?.trim() ?? "";
-  if (!endpoint) { providerConfig = null; render(); return; }
+  if (!endpoint) { setProviderConfig(null); render(); return; }
   const model = window.prompt("Model identifier", providerConfig?.model ?? "default")?.trim() || "default";
   const apiKey = window.prompt("API key (kept only in memory)", "") ?? "";
   try {
     new URL(endpoint);
-    providerConfig = { endpoint, model, apiKey, enabled: true };
+    setProviderConfig({ endpoint, model, apiKey, enabled: true });
     render();
   } catch {
     window.alert("Provider endpoint must be a valid URL.");
@@ -514,8 +328,11 @@ function bindEvents() {
   document.querySelector<HTMLButtonElement>("#welcome-demo")?.addEventListener("click", createDemoPaper);
   document.querySelector<HTMLButtonElement>("#toggle-sidebar")?.addEventListener("click", () => { state.sidebarOpen = !state.sidebarOpen; saveState(); render(); });
   document.querySelector<HTMLButtonElement>("#toggle-assistant")?.addEventListener("click", () => { state.assistantOpen = !state.assistantOpen; saveState(); render(); });
-  document.querySelector<HTMLButtonElement>("#clear-library")?.addEventListener("click", () => { if (window.confirm("Remove all papers and agent sessions from this browser?")) { state = emptyState(); saveState(); render(); } });
-  document.querySelectorAll<HTMLButtonElement>("[data-paper-id]").forEach((button) => button.addEventListener("click", () => { state.activePaperId = button.dataset.paperId ?? null; state.selectedText = ""; saveState(); render(); }));
+  
+  document.querySelectorAll<HTMLButtonElement>(".paper-del-btn").forEach(function (btn) { btn.addEventListener("click", function (e) { e.stopPropagation(); var id = btn.dataset.deletePaper; if (!id) return; var paper = state.papers.find(function (p) { return p.id === id; }); if (paper) { fetch("http://localhost:4121/papers/" + encodeURIComponent(paper.sourceName), { method: "DELETE" }).catch(function () {}); } state.papers = state.papers.filter(function (p) { return p.id !== id; }); if (state.activePaperId === id) state.activePaperId = state.papers[0]?.id ?? null; saveState(); render(); }); });
+
+document.querySelector<HTMLButtonElement>("#clear-library")?.addEventListener("click", () => { if (window.confirm("Remove all papers and agent sessions from this browser?")) { fetch("http://localhost:4121/papers", { method: "DELETE" }).catch(function () {}); Object.assign(state, emptyState()); saveState(); render(); } });
+  document.querySelectorAll<HTMLElement>("[data-paper-id]").forEach((el) => el.addEventListener("click", () => { state.activePaperId = el.dataset.paperId ?? null; state.selectedText = ""; saveState(); render(); }));
   document.querySelectorAll<HTMLButtonElement>("[data-session-id]").forEach((button) => button.addEventListener("click", () => { const sessionId = button.dataset.sessionId; if (sessionId) { state.agentWorkspace = selectAgentSession(state.agentWorkspace, sessionId); saveState(); render(); } }));
   document.querySelectorAll<HTMLButtonElement>("[data-fork-from]").forEach((button) => button.addEventListener("click", () => { const session = activeSession(); if (!session) return; try { state.agentWorkspace = replaceAgentSession(state.agentWorkspace, forkAgentBranch(session, { branchId: uid("branch"), fromMessageId: button.dataset.forkFrom!, title: `${session.title} · fork`, now: new Date().toISOString() })); saveState(); render(); } catch (error) { window.alert(error instanceof Error ? error.message : String(error)); } }));
   document.querySelectorAll<HTMLButtonElement>("[data-branch-id]").forEach((button) => button.addEventListener("click", () => { const session = activeSession(); if (!session) return; try { state.agentWorkspace = replaceAgentSession(state.agentWorkspace, selectAgentBranch(session, button.dataset.branchId!, new Date().toISOString())); saveState(); render(); } catch (error) { window.alert(error instanceof Error ? error.message : String(error)); } }));
@@ -537,10 +354,10 @@ function bindEvents() {
       saveState();
     }
   });
-  document.querySelector<HTMLButtonElement>("#ink-pen")?.addEventListener("click", () => { inkTool = "pen"; render(); });
-  document.querySelector<HTMLButtonElement>("#ink-highlighter")?.addEventListener("click", () => { inkTool = "highlighter"; render(); });
-  document.querySelector<HTMLButtonElement>("#ink-eraser")?.addEventListener("click", () => { inkTool = "eraser"; render(); });
-  document.querySelector<HTMLInputElement>("#ink-color")?.addEventListener("input", (event) => { inkColor = (event.target as HTMLInputElement).value; });
+  document.querySelector<HTMLButtonElement>("#ink-pen")?.addEventListener("click", () => { setInkTool("pen"); render(); });
+  document.querySelector<HTMLButtonElement>("#ink-highlighter")?.addEventListener("click", () => { setInkTool("highlighter"); render(); });
+  document.querySelector<HTMLButtonElement>("#ink-eraser")?.addEventListener("click", () => { setInkTool("eraser"); render(); });
+  document.querySelector<HTMLInputElement>("#ink-color")?.addEventListener("input", (event) => { setInkColor((event.target as HTMLInputElement).value); });
   document.querySelector<HTMLButtonElement>("#ink-clear-page")?.addEventListener("click", () => { const paper = activePaper(); if (!paper) return; const activePage = state.selectedPage ?? 1; state.inkStrokes = state.inkStrokes.filter((s) => !(s.documentId === paper.graph.documentId && s.pageNumber === activePage)); saveState(); render(); });
   document.querySelector<HTMLButtonElement>("#export-annotated")?.addEventListener("click", () => { void exportPageAsPng(); });
   document.querySelector<HTMLButtonElement>("#export-workspace")?.addEventListener("click", exportWorkspace);
@@ -657,7 +474,7 @@ async function importWorkspace(file: File): Promise<void> {
 
 function updateSelectionToolbar() {
   selectionToolbar?.remove();
-  selectionToolbar = null;
+  setSelectionToolbar(null);
   const selection = window.getSelection();
   const text = selection?.toString().trim() ?? "";
   if (!text || !selection?.anchorNode || !document.querySelector(".reader-panel")?.contains(selection.anchorNode)) return;
@@ -665,7 +482,7 @@ function updateSelectionToolbar() {
   const page = (selection.anchorNode.parentElement?.closest("[data-page-number]") as HTMLElement | null)?.dataset.pageNumber;
   state.selectedPage = page ? Number(page) : null;
   const range = selection.getRangeAt(0).getBoundingClientRect();
-  selectionToolbar = document.createElement("div");
+  setSelectionToolbar(document.createElement("div"));
   selectionToolbar.className = "selection-toolbar";
   selectionToolbar.style.left = `${Math.min(window.innerWidth - 250, Math.max(12, range.left))}px`;
   selectionToolbar.style.top = `${Math.max(12, range.top - 48)}px`;
@@ -680,9 +497,6 @@ function annotateSelection(text: string) {
   const paper = activePaper();
   const pageNumber = state.selectedPage;
   if (!paper || !pageNumber) return;
-  const page = paper.graph.pages[pageNumber - 1];
-  if (!page) return;
-  const startOffset = Math.max(0, page.text.indexOf(text));
   const endOffset = Math.min(page.text.length, startOffset + text.length);
   if (endOffset <= 0 || startOffset >= page.text.length) return;
   const anchor = createCrossPageAnchor(paper.graph, { documentVersionId: paper.graph.documentVersionId, startPage: pageNumber, endPage: pageNumber, startOffset, endOffset });
@@ -694,9 +508,6 @@ function annotateSelection(text: string) {
   render();
 }
 
-function replaceCapturedSession(session: AgentSession) {
-  state.agentWorkspace = replaceAgentSession(state.agentWorkspace, session);
-}
 
 async function sendAgentPrompt() {
   const paper = activePaper();
@@ -892,7 +703,7 @@ function onInkPointerDown(event: PointerEvent): void {
   canvas.setPointerCapture(event.pointerId);
   const pageNumber = Number(canvas.dataset.pageNumber ?? "0");
   if (!pageNumber) return;
-  activeInkStroke = { points: [], canvasEl: canvas, pageNumber, pageWidth: canvas.offsetWidth, pageHeight: canvas.offsetHeight };
+  setActiveInkStroke({ points: [], canvasEl: canvas, pageNumber, pageWidth: canvas.offsetWidth, pageHeight: canvas.offsetHeight });
   const norm = canvasToNormalized(event.offsetX, event.offsetY, canvas.offsetWidth, canvas.offsetHeight);
   activeInkStroke.points.push({ x: norm.x, y: norm.y, pressure: event.pressure, timestampMs: Date.now() });
 }
@@ -928,7 +739,7 @@ function onInkPointerUp(event: PointerEvent): void {
     state.inkStrokes = [...state.inkStrokes, stroke];
     saveState();
   }
-  activeInkStroke = null;
+  setActiveInkStroke(null);
 }
 
 function drawInkPreview(canvas: HTMLCanvasElement, points: ReadonlyArray<{ x: number; y: number }>): void {
@@ -991,5 +802,5 @@ function renderInkForPage(pageNumber: number): void {
   }
 }
 document.addEventListener("selectionchange", updateSelectionToolbar);
-render();
-setupInkEvents();
+try { render(); } catch (e) { console.error("render failed:", e); }
+try { setupInkEvents(); } catch (e) { console.error("setupInkEvents failed:", e); }

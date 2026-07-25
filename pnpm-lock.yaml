@@ -121,9 +121,15 @@ importers:
       '@paperwitha/storage':
         specifier: workspace:*
         version: link:../../packages/storage
+      '@xterm/addon-fit':
+        specifier: ^0.11.0
+        version: 0.11.0
       pdfjs-dist:
         specifier: ^4.10.38
         version: 4.10.38
+      xterm:
+        specifier: ^5.3.0
+        version: 5.3.0
 
   packages/agent-core: {}
 
@@ -149,6 +155,8 @@ importers:
       '@paperwitha/reader-core':
         specifier: workspace:*
         version: link:../reader-core
+
+  packages/paper-store: {}
 
   packages/platform:
     dependencies:
@@ -187,6 +195,9 @@ importers:
 
   services/pty:
     dependencies:
+      '@paperwitha/paper-store':
+        specifier: workspace:*
+        version: link:../../packages/paper-store
       ws:
         specifier: ^8.18.0
         version: 8.21.1
@@ -194,6 +205,12 @@ importers:
       '@types/ws':
         specifier: ^8.5.0
         version: 8.18.1
+
+  services/watcher:
+    dependencies:
+      '@paperwitha/paper-store':
+        specifier: workspace:*
+        version: link:../../packages/paper-store
 
 packages:
 
@@ -1415,7 +1432,7 @@ packages:
 
   '@expo/bunyan@4.0.1':
     resolution: {integrity: sha512-+Lla7nYSiHZirgK+U/uYzsLv/X+HaJienbD5AKX1UQZHYfWaP+9uuQluRB4GrEVWF0GZ7vEVp/jzaOT9k/SQlg==}
-    engines: {node: '>=0.10.0'}
+    engines: {'0': node >=0.10.0}
 
   '@expo/cli@0.22.28':
     resolution: {integrity: sha512-lvt72KNitGuixYD2l3SZmRKVu2G4zJpmg5V7WfUBNpmUU5oODBw/6qmiJ6kSLAlfDozscUk+BBGknBBzxUrwrA==}
@@ -2033,6 +2050,9 @@ packages:
   '@xmldom/xmldom@0.9.10':
     resolution: {integrity: sha512-A9gOqLdi6cV4ibazAjcQufGj0B1y/vDqYrcuP6d/6x8P27gRS8643Dj9o1dEKtB6O7fwxb2FgBmJS2mX7gpvdw==}
     engines: {node: '>=14.6'}
+
+  '@xterm/addon-fit@0.11.0':
+    resolution: {integrity: sha512-jYcgT6xtVYhnhgxh3QgYDnnNMYTcf8ElbxxFzX0IZo+vabQqSPAjC3c1wJrKB5E19VwQei89QCiZZP86DCPF7g==}
 
   abort-controller@3.0.0:
     resolution: {integrity: sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg==}
@@ -4641,6 +4661,10 @@ packages:
   xmlchars@2.2.0:
     resolution: {integrity: sha512-JZnDKK8B0RCDw84FNdDAIpZK+JuJw+s7Lz8nksI7SIuU3UXJJslUthsi+uWBUYOwPFwW7W7PRLRfUKpxjtjFCw==}
 
+  xterm@5.3.0:
+    resolution: {integrity: sha512-8QqjlekLUFTrU6x7xck1MsPzPA571K5zNqWm0M0oroYEWVOptZ0+ubQSkQ3uxIEhcIHRujJy6emDWX4A7qyFzg==}
+    deprecated: This package is now deprecated. Move to @xterm/xterm instead.
+
   y18n@5.0.8:
     resolution: {integrity: sha512-0pfFzegeDWJHJIAmTLRP2DwHjdF5s7jo9tuztdQxAhINCdvS+3nGINqPd00AphqJR/0LhANUS6/+7SCb98YOfA==}
     engines: {node: '>=10'}
@@ -6700,6 +6724,8 @@ snapshots:
   '@xmldom/xmldom@0.7.13': {}
 
   '@xmldom/xmldom@0.9.10': {}
+
+  '@xterm/addon-fit@0.11.0': {}
 
   abort-controller@3.0.0:
     dependencies:
@@ -9487,6 +9513,8 @@ snapshots:
   xmlbuilder@15.1.1: {}
 
   xmlchars@2.2.0: {}
+
+  xterm@5.3.0: {}
 
   y18n@5.0.8: {}
 

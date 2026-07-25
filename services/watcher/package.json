@@ -1,5 +1,5 @@
 {
-  "name": "@paperwitha/pty",
+  "name": "@paperwitha/watcher",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -7,10 +7,6 @@
     "start": "tsx src/index.ts"
   },
   "dependencies": {
-    "ws": "^8.18.0",
     "@paperwitha/paper-store": "workspace:*"
-  },
-  "devDependencies": {
-    "@types/ws": "^8.5.0"
   }
 }
