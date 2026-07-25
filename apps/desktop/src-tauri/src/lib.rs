@@ -1,40 +1,36 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use tauri::Manager;
-use tauri_plugin_stronghold::StrongholdExt;
+
+use std::fs;
 
 #[tauri::command]
 fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
-
 /// Save the workspace state as JSON to the app data directory.
 #[tauri::command]
-async fn save_workspace(app: tauri::AppHandle, data: String) -> Result<(), String> {
+fn save_workspace(app: tauri::AppHandle, data: String) -> Result<(), String> {
     let path = app
         .path()
         .app_data_dir()
         .map_err(|e| e.to_string())?
         .join("workspace.json");
     if let Some(parent) = path.parent() {
-        tokio::fs::create_dir_all(parent)
-            .await
-            .map_err(|e| e.to_string())?;
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    tokio::fs::write(&path, data)
-        .await
-        .map_err(|e| e.to_string())
+    fs::write(&path, data).map_err(|e| e.to_string())
 }
 
 /// Load the workspace state from the app data directory.
 #[tauri::command]
-async fn load_workspace(app: tauri::AppHandle) -> Result<String, String> {
+fn load_workspace(app: tauri::AppHandle) -> Result<String, String> {
     let path = app
         .path()
         .app_data_dir()
         .map_err(|e| e.to_string())?
         .join("workspace.json");
-    match tokio::fs::read_to_string(&path).await {
+    match fs::read_to_string(&path) {
         Ok(data) => Ok(data),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok("{}".to_string()),
         Err(e) => Err(e.to_string()),
