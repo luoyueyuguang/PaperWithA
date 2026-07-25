@@ -150,6 +150,8 @@ importers:
         specifier: workspace:*
         version: link:../reader-core
 
+  packages/paper-store: {}
+
   packages/platform:
     dependencies:
       '@paperwitha/domain':
@@ -184,6 +186,12 @@ importers:
       '@paperwitha/sync':
         specifier: workspace:*
         version: link:../../packages/sync
+
+  services/watcher:
+    dependencies:
+      '@paperwitha/paper-store':
+        specifier: workspace:*
+        version: link:../../packages/paper-store
 
 packages:
 
