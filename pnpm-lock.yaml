@@ -44,6 +44,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@paperwitha/agent-runtime-node':
+        specifier: workspace:*
+        version: link:../../packages/agent-runtime-node
       '@paperwitha/platform':
         specifier: workspace:*
         version: link:../../packages/platform
@@ -66,6 +69,9 @@ importers:
       '@paperwitha/agent-core':
         specifier: workspace:*
         version: link:../../packages/agent-core
+      '@paperwitha/context':
+        specifier: workspace:*
+        version: link:../../packages/context
       '@paperwitha/domain':
         specifier: workspace:*
         version: link:../../packages/domain
@@ -169,7 +175,15 @@ importers:
 
   packages/storage: {}
 
+  packages/sync: {}
+
   packages/workspace: {}
+
+  services/api:
+    dependencies:
+      '@paperwitha/sync':
+        specifier: workspace:*
+        version: link:../../packages/sync
 
 packages:
 

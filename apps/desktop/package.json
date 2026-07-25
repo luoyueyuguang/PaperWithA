@@ -9,6 +9,6 @@
     "dev:native": "tauri dev",
     "build:native": "tauri build"
   },
-  "dependencies": { "@paperwitha/platform": "workspace:*", "@tauri-apps/api": "^2.0.0" },
+  "dependencies": { "@paperwitha/platform": "workspace:*", "@paperwitha/agent-runtime-node": "workspace:*", "@tauri-apps/api": "^2.0.0" },
   "devDependencies": { "@tauri-apps/cli": "^2.5.0" }
 }

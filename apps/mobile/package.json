@@ -13,6 +13,7 @@
     "@babel/runtime": "^7.25.0",
     "@expo/metro-runtime": "~4.0.1",
     "@paperwitha/agent-core": "workspace:*",
+    "@paperwitha/context": "workspace:*",
     "@paperwitha/domain": "workspace:*",
     "@paperwitha/reader-core": "workspace:*",
     "expo": "^52.0.0",

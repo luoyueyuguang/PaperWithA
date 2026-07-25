@@ -19,7 +19,10 @@ button { cursor: pointer; }
 .avatar { border-radius: 50%; background: #27364e; font-size: 12px; font-weight: 800; }
 .shell-body { display: flex; height: calc(100vh - 68px); min-height: 0; overflow: hidden; }
 .sidebar { flex: 0 0 272px; display: flex; min-height: 0; flex-direction: column; padding: 26px 17px; background: #101a2b; color: #aebcd0; border-right: 1px solid #25334a; transition: flex-basis .2s, padding .2s; overflow: hidden; }
-.sidebar-closed .sidebar { flex-basis: 0; padding-left: 0; padding-right: 0; border: 0; }
+.sidebar-closed .sidebar { flex-basis: 0; padding: 0; border: 0; }
+.sidebar-edge-toggle { flex: 0 0 28px; display: grid; place-items: center; border: 0; padding: 0; color: #5c7393; background: #0d1522; cursor: pointer; font-size: 11px; transition: color .15s, background .15s; }
+.sidebar-edge-toggle:hover { color: #c9f269; background: #1a2640; }
+.sidebar-closed .sidebar-edge-toggle { background: #101a2b; border-right: 1px solid #1e2d44; }
 .sidebar-heading { display: flex; justify-content: space-between; align-items: center; padding: 0 10px 14px; color: #f3f6fa; font-size: 12px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
 .count { color: #7888a1; }
 .demo-card { width: 100%; display: flex; gap: 11px; align-items: center; text-align: left; padding: 13px 11px; border: 1px solid #33455f; border-radius: 11px; color: #dce7f4; background: #17263b; }
@@ -45,7 +48,7 @@ button { cursor: pointer; }
 .sidebar-actions .ghost-button { flex: 1; border: 0; color: #71839d; background: transparent; font-size: 10px; cursor: pointer; text-align: center; }
 .sidebar-actions .ghost-button:hover { color: #c9f269; }
 .main-area { min-width: 0; min-height: 0; flex: 1; display: flex; flex-direction: column; overflow: hidden; background: #f4f6fa; }
-.workspace-toolbar { display: flex; min-height: 60px; flex: 0 0 60px; justify-content: space-between; align-items: center; gap: 12px; padding: 0 28px; border-bottom: 1px solid #e0e5ed; background: #fff; }
+.workspace-toolbar { display: flex; min-height: 48px; flex: 0 0 48px; justify-content: space-between; align-items: center; gap: 12px; padding: 0 28px; border-bottom: 1px solid #e0e5ed; background: #fff; }
 .crumb { overflow: hidden; color: #92a0b2; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .crumb span { padding: 0 8px; color: #ccd3dd; }
 .crumb strong { color: #26364d; }
@@ -58,11 +61,11 @@ button { cursor: pointer; }
 .split-pane .assistant-panel { margin: 0 2px; }
 .text-layer { z-index: 1; user-select: text; }
 .split-divider:hover, .split-divider.dragging { background: #c9f269; }
-.reader-panel, .assistant-panel { min-height: 0; border: 1px solid #e2e7ee; border-radius: 13px; background: #fff; box-shadow: 0 8px 26px rgb(35 50 75 / 5%); }
-.reader-panel { display: flex; flex-direction: column; overflow: hidden; }
-.reader-header { display: flex; justify-content: space-between; align-items: flex-start; padding: 24px 28px 18px; border-bottom: 1px solid #edf0f4; }
+.reader-panel, .assistant-panel { min-height: 0; background: #fff; }
+.reader-panel { display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid #e2e7ee; }
+.reader-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 28px; border-bottom: 1px solid #edf0f4; }
 .eyebrow { color: #7890a7; font-size: 10px; font-weight: 850; letter-spacing: .16em; }
-.reader-header h2 { max-width: 580px; margin: 8px 0 0; color: #172943; font-family: Georgia, serif; font-size: clamp(22px, 3vw, 32px); letter-spacing: -.035em; }
+.reader-header h2 { margin: 0; color: #172943; font-family: Georgia, serif; font-size: 18px; letter-spacing: -.025em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 480px; }
 .reader-meta { display: flex; gap: 12px; color: #8390a3; font-size: 11px; white-space: nowrap; }
 .reader-scroll { min-height: 0; flex: 1; overflow: auto; padding: 28px clamp(22px, 5vw, 68px) 80px; overscroll-behavior: contain; scroll-behavior: smooth; }
 .paper-page { position: relative; max-width: 720px; margin: 0 auto 56px; }

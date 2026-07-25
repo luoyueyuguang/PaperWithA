@@ -4,6 +4,7 @@ import {
   addAgentSession,
   appendAgentEvent,
   appendAgentMessage,
+  archiveAgentSession,
   forkAgentBranch,
   selectAgentBranch,
   createAgentSession,
@@ -254,6 +255,8 @@ async function parseFile(file: File): Promise<DocumentGraph> {
     const document = await pdfjs.getDocument({ data: bytes }).promise;
     const pages: DocumentPage[] = [];
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+      const page = await document.getPage(pageNumber);
+      const viewport = page.getViewport({ scale: 1.5 });
       const content = await page.getTextContent();
       const text = content.items.map((item) => ("str" in item ? item.str : "")).join(" ").trim();
       if (blobHash) {
@@ -277,6 +280,16 @@ async function parseFile(file: File): Promise<DocumentGraph> {
   return { graphId: uid("graph"), documentId, documentVersionId: `${documentId}:v1`, pages: splitTextIntoPages(await file.text()), blobHash: null };
 }
 
+async function importFile(file: File): Promise<void> {
+  try {
+    const graph = await parseFile(file);
+    const title = file.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " ");
+    addPaper(makePaper(title, file.name, graph));
+  } catch (error) {
+    console.error("Import failed:", error);
+    window.alert(`Failed to import paper: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
 function renderPagePlaceholder(page: DocumentPage, annotationCount: number, blobHash: string | null): string {
   const lowConfidence = page.confidence !== undefined && page.confidence < 0.5;
   const ocrStatus = ocrProgress.get(page.pageId);
@@ -383,77 +396,50 @@ function render() {
           <div class="library-list">${state.papers.length ? state.papers.map((candidate) => `<button class="paper-item ${candidate.id === paper?.id ? "active" : ""}" data-paper-id="${candidate.id}"><span class="paper-icon">▤</span><span class="paper-item-copy"><strong>${escapeHtml(candidate.title)}</strong><small>${escapeHtml(candidate.sourceName)} · ${candidate.graph.pages.length} pages</small></span></button>`).join("") : `<div class="empty-library"><div class="empty-icon">⌁</div><strong>Your library is empty</strong><span>Import a paper to begin.</span></div>`}</div>
           ${state.papers.length ? `<div class="sidebar-actions"><button class="ghost-button" id="clear-library">Clear local library</button><button class="ghost-button" id="export-workspace" title="Export entire workspace as .paperwitha">Export</button><label class="ghost-button"><input id="import-workspace" type="file" accept=".json" hidden />Import</label></div>` : ""}
         </aside>
+        <button class="sidebar-edge-toggle" id="toggle-sidebar" title="${state.sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}">${state.sidebarOpen ? "◀" : "▶"}</button>
         <main class="main-area">
-          <div class="workspace-toolbar"><div class="crumb">Library <span>/</span> <strong>${paper ? escapeHtml(paper.title) : "Welcome"}</strong></div><div class="toolbar-actions">${paper ? `<span class="saved-state">● Saved locally</span><button class="ghost-button" id="toggle-assistant">${state.assistantOpen ? "Hide agents" : "Show agents"}</button>` : ""}<button class="ghost-button" id="toggle-sidebar">${state.sidebarOpen ? "Hide library" : "Show library"}</button></div></div>
+          <div class="workspace-toolbar"><div class="crumb">Library <span>/</span> <strong>${paper ? escapeHtml(paper.title) : "Welcome"}</strong></div><div class="toolbar-actions">${paper ? `<span class="saved-state">● Saved locally</span><button class="ghost-button" id="toggle-assistant">${state.assistantOpen ? "Hide agents" : "Show agents"}</button>` : ""}</div></div>
           ${paper ? renderWorkspace(paper) : renderWelcome()}
         </main>
       </div>
     </div>`;
   bindEvents();
-  queuePdfCanvasRender();
+  setupPdfViewer();
   scheduleInkSetup();
 }
 
 
-function queuePdfCanvasRender(): void {
+async function setupPdfViewer(): Promise<void> {
   const paper = activePaper();
   if (!paper?.graph.blobHash) return;
-  const hash = paper.graph.blobHash;
-  document.querySelectorAll<HTMLElement>(".pdf-canvas-wrap").forEach(async (wrap) => {
-    const pageNumber = Number(wrap.closest("[data-page-number]")?.getAttribute("data-page-number"));
-    if (!pageNumber) return;
-    try {
-      const bytes = await blobStore.get(hash);
-      if (!bytes) return;
-      const doc = await pdfjs.getDocument({ data: bytes }).promise;
-      const page = await doc.getPage(pageNumber);
-      const viewport = page.getViewport({ scale: 1.5 });
-      const canvas = document.createElement("canvas");
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      canvas.className = "pdf-canvas";
-      canvas.dataset.pageNumber = String(pageNumber);
-      const ctx = canvas.getContext("2d");
-      if (ctx) await page.render({ canvasContext: ctx, viewport }).promise;
-      wrap.prepend(canvas);
-
-      // Render positioned text layer
-      const items = textItemCache.get(`${hash}:${pageNumber}`);
-      if (items) {
-        const textDiv = document.createElement("div");
-        textDiv.className = "text-layer";
-        textDiv.style.cssText = `position:absolute;top:0;left:0;width:${viewport.width}px;height:${viewport.height}px;overflow:hidden;pointer-events:none;`;
-        for (const item of items) {
-          if (!item.str.trim()) continue;
-          const span = document.createElement("span");
-          span.textContent = item.str;
-          span.style.cssText = `position:absolute;left:${item.x * viewport.width}px;top:${(item.y - item.fontSize) * viewport.height}px;font-size:${Math.max(8, item.fontSize * viewport.width * 0.75)}px;color:#000;white-space:nowrap;pointer-events:auto;`;
-          textDiv.appendChild(span);
-        }
-        wrap.appendChild(textDiv);
-      }
-
-      await doc.destroy();
-    } catch { /* canvas render failed, text layer remains */ }
-  });
+  const container = document.querySelector<HTMLDivElement>("#reader-scroll");
+  if (!container) return;
+  try {
+    const bytes = await blobStore.get(paper.graph.blobHash);
+    if (!bytes) return;
+    const blob = new Blob([bytes], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    container.style.cssText = "padding:0;overflow:hidden;position:relative;";
+    container.innerHTML = `<iframe src="${url}" style="width:100%;height:100%;border:0;position:absolute;top:0;left:0;"></iframe>`;
+  } catch (e) { console.error("PDF load failed:", e); }
 }
 function renderWelcome() {
   return `<section class="welcome"><div class="welcome-glow"></div><span class="eyebrow">LOCAL-FIRST RESEARCH WORKSPACE</span><h1>Read deeply.<br /><em>Think with evidence.</em></h1><p>Bring a paper into a local workspace with independent agent sessions, explicit evidence, and persistent research history.</p><div class="welcome-actions"><label class="primary-button"><input id="welcome-file-input" type="file" accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown" hidden />Import a paper <span>↗</span></label><button class="secondary-button" id="welcome-demo">Open the demo <span>→</span></button></div><div class="feature-row"><span><b>01</b> Continuous reading</span><span><b>02</b> Multi-session agents</span><span><b>03</b> Local by default</span></div></section>`;
 }
 
 function renderWorkspace(paper: StoredPaper) {
-  const pages = paper.graph.pages.map((page) => {
-    const annotationCount = paper.annotations.filter((annotation) => annotation.anchor.pageId === page.pageId).length;
+  const isPdf = Boolean(paper.graph.blobHash);
+  const readerContent = isPdf ? "" : paper.graph.pages.map((page) => {
+    const annotationCount = paper.annotations.filter((a) => a.anchor.pageId === page.pageId).length;
     return renderPagePlaceholder(page, annotationCount, paper.graph.blobHash);
   }).join("");
-  const inkBar = paper.graph.blobHash ? `<div class="ink-toolbar"><button class="ink-tool ${inkTool === "pen" ? "active" : ""}" id="ink-pen" title="Pen">✎</button><button class="ink-tool ${inkTool === "highlighter" ? "active" : ""}" id="ink-highlighter" title="Highlighter">◐</button><button class="ink-tool ${inkTool === "eraser" ? "active" : ""}" id="ink-eraser" title="Eraser">⌫</button><input type="color" value="${escapeHtml(inkColor)}" id="ink-color" title="Ink color" class="ink-color" /><button class="ink-tool" id="ink-clear-page" title="Clear page ink">Clear</button><button class="ink-tool" id="export-annotated" title="Export annotated page as PNG">⬇</button></div>` : "";
   const readerWidth = state.assistantOpen ? `${Math.round(state.splitRatio * 100)}%` : "100%";
-  return `<div class="split-pane" id="split-pane"><section class="reader-panel" style="flex:0 0 ${readerWidth};min-width:0;"><div class="reader-header"><div><span class="eyebrow">DOCUMENT READER</span><h2>${escapeHtml(paper.title)}</h2></div><div class="reader-meta"><span>${paper.graph.pages.length} pages</span><span>Zoom ${Math.round(paper.view.zoom * 100)}%</span></div>${inkBar}</div><div class="reader-scroll" id="reader-scroll">${pages}</div></section>${state.assistantOpen ? `<div class="split-divider" id="split-divider" title="Drag to resize"></div><aside class="assistant-panel" style="flex:1;min-width:280px;"><div class="assistant-tabs"><button class="tab ${state.activeTab === "agents" ? "active" : ""}" id="agent-tab">Agents</button><button class="tab ${state.activeTab === "brief" ? "active" : ""}" id="brief-tab">Reading Brief</button></div>${state.activeTab === "agents" ? renderAgentWorkspace(paper) : renderBrief(paper)}</aside>` : ""}</div>`;
+  return `<div class="split-pane" id="split-pane"><section class="reader-panel" style="flex:0 0 ${readerWidth};min-width:0;"><div class="reader-scroll" id="reader-scroll">${readerContent}</div></section>${state.assistantOpen ? `<div class="split-divider" id="split-divider" title="Drag to resize"></div><aside class="assistant-panel" style="flex:1;min-width:280px;"><div class="assistant-tabs"><button class="tab ${state.activeTab === "agents" ? "active" : ""}" id="agent-tab">Agents</button><button class="tab ${state.activeTab === "brief" ? "active" : ""}" id="brief-tab">Brief</button></div>${state.activeTab === "agents" ? renderAgentWorkspace(paper) : renderBrief(paper)}</aside>` : ""}</div>`;
 }
 
 function renderAgentWorkspace(paper: StoredPaper) {
-  const sessions = state.agentWorkspace.sessions.filter((session) => session.status !== "archived");
   const session = activeSession();
+  const sessions = state.agentWorkspace.sessions.filter((s) => s.status !== "archived");
   const tabs = sessions.map((candidate) => {
     const rt = runtimeMeta(candidate.runtimeProfileId);
     return `<button class="agent-session-tab ${candidate.sessionId === session?.sessionId ? "active" : ""}" data-session-id="${candidate.sessionId}" title="${escapeHtml(candidate.title)} — ${escapeHtml(rt.name)}"><span class="session-status ${candidate.status}"></span><span class="agent-icon">${escapeHtml(rt.icon)}</span><span>${escapeHtml(candidate.title)}</span></button>`;
