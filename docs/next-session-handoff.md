@@ -32,8 +32,8 @@ PaperWithA is pivoting from "PDF reader with chat" to **agent-driven paper resea
 
 ```bash
 # Terminal
-corepack pnpm dev:web                                    # :5173
-corepack pnpm --filter @paperwitha/pty exec tsx src/index.ts  # ws://:4121
+corepack pnpm dev:web                                    # :4173
+corepack pnpm --filter @paperwitha/pty start              # ws://:4121
 
 # Or all together
 corepack pnpm dev:web &

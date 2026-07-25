@@ -40,7 +40,6 @@ PaperWithA 是 agent-driven 论文研究工具。PDF 放入 XDG 目录，agent�
 - `services/api`：同步 HTTP 服务（port 4120）。
 - `services/pty`：Terminal shell 后端，在 papers 目录启 /bin/bash，WebSocket（port 4121）。
 - `services/watcher`：文件监听 + Pi subagent 触发（已 revert，需恢复）。
-- `services/api`：无鉴权、内存态同步 HTTP 原型；进程重启会丢数据。
 - `probes/gate-0`：六项确定性可行性探针和机器报告。
 - `.github/workflows/native-builds.yml`、`infra/desktop-build.Dockerfile`：原生构建入口。
 
@@ -91,7 +90,7 @@ cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check
 ```bash
 corepack pnpm dev:web
 corepack pnpm --filter @paperwitha/api start
-```
+corepack pnpm --filter @paperwitha/pty start
 
 原生 Desktop 构建优先使用 CI 或：
 
@@ -112,14 +111,10 @@ docker build -f infra/desktop-build.Dockerfile -t paperwitha-desktop .
 
 ## 当前最重要的缺口
 
-1. Web / Desktop 尚未接入正式 docking Host、ghost preview、detach 和原生多窗口。
-2. Web Chat 尚无完整 ChatSession 标签、ContextSnapshot、多论文分组引用和消息分叉。
-3. Reading Brief 目前是首三页文本摘要，不是结构化、不可变版本模型。
-4. 扫描 PDF 在产品 UI 中仅显示 page-only fallback；Gate 0 OCR 尚未接入产品流程。
-5. Sync API 是无鉴权内存原型，不是持久化生产服务。
-6. Tauri 尚无系统文件、密钥链和原生窗口能力实现。
-7. Expo 仍是演示壳，缺少真实导入、ReaderAdapter、触摸选区、本地 SQLite 和安全存储。
-8. Provider UI 只有会话内 endpoint / model / API Key 提示框，尚无 manifest 导入、测试连接、取消 UI、系统凭据存储。
-9. 缺少覆盖正式首版 19 个场景的端到端验收套件。
-
-优先修复源头和正式契约，不要为了宣称完成而增加 shim、假实现或跳过验收。
+1. Terminal CLI 需换 xterm.js（当前 textarea + WebSocket）。
+2. Tmux ViewTree 递归切分需要从 main.ts 抽成独立模块。
+3. Library × 删除按钮 handler 未接入。
+4. paper-store 包被 revert，需恢复。
+5. services/watcher（文件监听 + Pi subagent）需恢复。
+6. Pi agent 集成：terminal 需能读取 papers/ 结果。
+7. Mobile / Desktop 仍为壳，未适配新架构。
