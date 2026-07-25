@@ -4,9 +4,9 @@
 
 ## 项目定位
 
-PaperWithA 是本地优先的跨端 AI 论文阅读工作台。目标平台为 Web、Tauri Desktop 和 Expo Mobile；共享 TypeScript 领域核心，平台 UI 与原生能力分开实现。
+PaperWithA 是 agent-driven 论文研究工具。PDF 放入 XDG 目录，agent（Pi subagent）分析后存结果，用户通过 Web UI 的 Terminal CLI 与 agent 交互。核心体验不是"阅读器"，而是"你有篇论文，agent 读过了，你问它"。
 
-当前仓库已实现可运行的 Web 产品切片、共享核心包、同步 HTTP 原型、Tauri 壳、Expo 演示壳和 Gate 0 探针，但**尚未完成正式 Spec 中的全部 Gate 2–4 验收**。尤其不要把“能构建”解释为“完整产品已交付”。
+当前处于架构转型期：从 PDF 阅读工作台转向 agent + 论文仓库模式。Web UI 保留 PDF 阅读（左面板），右面板已改为 Terminal CLI。
 
 ## 必读顺序
 
@@ -22,19 +22,24 @@ PaperWithA 是本地优先的跨端 AI 论文阅读工作台。目标平台为 W
 
 ## 仓库结构
 
-- `apps/web`：当前主要产品 Host。Vite + 原生 TypeScript DOM；不是 React 实现。PDF.js 导入、阅读、选区、批注、Chat、Reading Brief、Provider 和同步入口集中在 `src/main.ts`。
-- `apps/desktop`：Tauri 2 壳，加载 `apps/web/dist`。Rust 目前只负责启动边界，尚无文件、密钥链或多原生窗口命令。
-- `apps/mobile`：Expo / React Native 演示壳。当前为内置 Demo Paper + Brief 切换，不是完整移动阅读器。
-- `packages/domain`：最小 DocumentGraph / DocumentVersion 类型。
-- `packages/reader-core`：Graph 缓存、可见页计算、PaperView 状态和 EvidenceAnchor。
-- `packages/workspace`：可序列化 LayoutTree、swap / merge / split 命令和历史。
-- `packages/context`：显式文档集合、固定来源、词法排序和预算裁剪。
-- `packages/ai-core`：声明式 ProviderManifest、mapping、SSE / HTTP JSON 客户端。
-- `packages/evidence`：Annotation 创建与更新。
-- `packages/storage`：Memory / Browser StoragePort 和 JSON Repository。
-- `packages/sync`：SyncEnvelope、Outbox / Inbox、幂等内存服务和 HttpSyncPort。
-- `packages/plugin-contracts`、`packages/plugin-core`：最小同步插件契约和单激活目标 PluginHost。
-- `packages/platform`：跨端 PlatformShell 状态壳。
+- `apps/web`：Web Host。Vite + 原生 TS DOM。左边 PDF 阅读器（PDF.js），右边 Terminal CLI（WebSocket 连 PTY 后端）。入口 `src/main.ts`（约 980 行）。
+- `apps/desktop`：Tauri 2 壳，加载 `apps/web/dist`。
+- `apps/mobile`：Expo / React Native 演示壳。
+- `packages/domain`：DocumentGraph / DocumentVersion / InkStroke / ReadingBrief。
+- `packages/reader-core`：Graph 缓存、PaperView、EvidenceAnchor。
+- `packages/workspace`：LayoutTree、swap / merge / split 命令和历史。
+- `packages/context`：ContextSet、ContextBuilder（词法排序 + 预算）。
+- `packages/ai-core`：ProviderManifest、ProviderClient（SSE / JSON）。
+- `packages/evidence`：Annotation。
+- `packages/storage`：StoragePort、BlobStore、JsonRepository。
+- `packages/sync`：SyncPort、SyncEnvelope、Outbox、Inbox、InMemorySyncServer。
+- `packages/plugin-contracts` / `plugin-core`：同步插件契约和 PluginHost。
+- `packages/platform`：跨端 PlatformShell。
+- `packages/agent-core`：Session / Branch / Run / Event、Sandbox、Runtime。
+- `packages/agent-runtime-node`：OMP RPC、Pi RPC、OpenCode HTTP 适配器、AgentHost。
+- `services/api`：同步 HTTP 服务（port 4120）。
+- `services/pty`：Terminal shell 后端，在 papers 目录启 /bin/bash，WebSocket（port 4121）。
+- `services/watcher`：文件监听 + Pi subagent 触发（已 revert，需恢复）。
 - `services/api`：无鉴权、内存态同步 HTTP 原型；进程重启会丢数据。
 - `probes/gate-0`：六项确定性可行性探针和机器报告。
 - `.github/workflows/native-builds.yml`、`infra/desktop-build.Dockerfile`：原生构建入口。

@@ -1,73 +1,64 @@
-# PaperWithA — Final State
+# PaperWithA — Handoff (2026-07-25)
 
-## Verification (2026-07-25)
+## Verification
 
 ```text
-typecheck               pass
-vitest                  18 files / 59 tests pass
-build:web               pass
-mobile typecheck        pass
-Gate 0 validator        48/48 pass
-main.ts                 1033 lines
+typecheck        pass
+vitest           18 files / 59 tests pass
+build:web        pass  (~476 KB)
+Gate 0           48/48 pass
 ```
 
-## Package Layout
+## Architecture Direction (NEW)
+
+PaperWithA is pivoting from "PDF reader with chat" to **agent-driven paper research via terminal CLI**.
 
 ```
-packages/
-├── agent-core/          Session/Branch/Run/Event, Sandbox, Runtime, Export
-├── agent-runtime-node/  OMP RPC, Pi RPC, OpenCode HTTP adapters, AgentHost
-├── ai-core/             ProviderManifest, ProviderClient (SSE/JSON)
-├── context/             ContextSet, ContextBuilder (lexical+budget)
-├── contracts/           Gate 0 probe report types
-├── domain/              DocumentGraph, InkStroke, ReadingBrief
-├── evidence/            Annotation
-├── platform/            PlatformShell (cross-platform state)
-├── plugin-contracts/    PluginManifest, PluginLifecycle
-├── plugin-core/         PluginHost
-├── reader-core/         DocumentGraphCache, PaperView, EvidenceAnchor
-├── storage/             StoragePort, BlobStore, JsonRepository
-├── sync/                SyncPort, SyncEnvelope, Outbox, Inbox, HttpSyncPort, InMemorySyncServer
-└── workspace/           LayoutTree, LayoutHistory
-
-services/
-└── api/                 Sync API HTTP server (POST /sync/push, GET /sync/pull, GET /health)
-
-apps/
-├── web/                 Complete Web Host (Vite + TS DOM)
-├── desktop/             Tauri 2 + Rust native stack + AgentHost integration
-└── mobile/              Expo 52 + React Native with functional agent sessions
+~/.local/share/paperwitha/papers/   ← drop PDFs here
+~/.local/share/paperwitha/results/  ← agent analysis per paper
 ```
 
-## Capability Summary
+## Current Web UI
 
-| Feature | Status |
-|---|---|
-| PDF import + canvas render + positioned text layer | Done |
-| Handwriting (pen/highlighter/eraser) + PNG export | Done |
-| OCR on low-confidence pages | Done |
-| Multi-session with independent context/history | Done |
-| Session fork/branch switching | Done |
-| OMP/Pi/OpenCode agent adapters (packages) | Done |
-| OMP/Pi/OpenCode wired — Desktop AgentHost | Done |
-| Sandbox experiments (virtual FS, runs, artifacts) | Done |
-| .paperwitha workspace export/import | Done |
-| Structured Reading Brief (confidence-classified) | Done |
-| Citation jump-to-source with flash animation | Done |
-| Split-pane layout with draggable divider | Done |
-| Desktop Tauri native stack (fs, sqlite, stronghold) | Scaffolded |
-| Plugin system | Done |
-| Runtime/agent profile selection in Web UI | Done |
-| Runtime/agent profile selection in Mobile UI | Done |
-| Sync package (SyncPort, Outbox, Inbox, InMemorySyncServer) | Done |
-| Sync API service (HTTP, CORS, sensitive payload rejection) | Done |
-| Mobile agent sessions (functional chat) | Done |
+- **Left panel**: PDF reader (PDF.js canvas + text layer, working)
+- **Right panel**: Terminal CLI connected to a real shell via WebSocket
+  - WebSocket backend at `services/pty/` — spawns `/bin/bash` in papers dir
+  - Start it: `pnpm --filter @paperwitha/pty start` → ws://localhost:4121
+  - Cross-platform: bash on Linux/macOS, cmd.exe on Windows
+- Top bar merged into sidebar (compact layout)
+- Import paper, sidebar toggle, provider config all functional
 
-## Latest Changes (2026-07-25)
+## Running
 
-1. **Bug fix**: `archiveAgentSession` was used but not imported in `apps/web/src/main.ts` — fixed
-2. **Sync package**: Created `packages/sync` with SyncPort, SyncEnvelope, Outbox, Inbox, HttpSyncPort, InMemorySyncServer, envelope guard (sensitive payload rejection), and 14 tests
-3. **Sync API**: Created `services/api` — HTTP server at port 4120 with POST /sync/push, GET /sync/pull, GET /health
-4. **Web UI**: Added runtime/agent profile selectors in agent workspace toolbar; non-embedded runtimes marked "Desktop"; runtime selection persisted in localStorage
-5. **Desktop**: Added `createDesktopAgentHost()`, `getAvailableDesktopRuntimes()` to `apps/desktop/src/index.ts` with AgentHost integration for OMP/Pi/OpenCode adapters
-6. **Mobile**: Made `App.tsx` functional — real agent workspace state, chat input/response, runtime/agent profile selection, context-aware evidence responses
+```bash
+# Terminal
+corepack pnpm dev:web                                    # :5173
+corepack pnpm --filter @paperwitha/pty exec tsx src/index.ts  # ws://:4121
+
+# Or all together
+corepack pnpm dev:web &
+corepack pnpm --filter @paperwitha/pty start &
+```
+
+## Known Issues
+
+1. **Terminal**: Simple textarea + WebSocket works. xterm.js was attempted but CSS import failed (v5 doesn't ship separate CSS).
+2. **Tmux split views**: Requested but needs ViewTree refactor. Current is single reader panel.
+3. **Library delete**: Paper items show × on hover but delete button handler not yet wired.
+4. **paper-store package**: Was created then reverted. XDG paths are hardcoded in PTY server. Should be restored as a proper package.
+
+## Package State
+
+| Package | Status |
+|---------|--------|
+| agent-core | Complete, tested |
+| agent-runtime-node | Complete (OMP/Pi/OpenCode adapters), not wired to web |
+| ai-core | Complete |
+| domain, reader-core, evidence, context, storage, workspace | Complete |
+| sync | New, complete (14 tests) |
+| services/api | Sync HTTP server (/:4120) |
+| services/pty | Shell terminal backend (ws://:4121) |
+| services/watcher | File watcher + Pi subagent (was reverted, needs restore) |
+| apps/desktop | Tauri shell, AgentHost integrated |
+| apps/mobile | Expo shell with functional agent sessions |
+| apps/web | PDF reader + terminal CLI |

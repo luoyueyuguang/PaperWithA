@@ -1,89 +1,86 @@
 # PaperWithA
 
-Local-first, multi-agent research workspace for academic papers. Read PDFs with proper text layer positioning, handwrite annotations with pen/highlighter/eraser, run multi-session agent conversations with independent context, and execute sandboxed experiments — all stored locally on your device.
+Local-first agent-driven research workspace. Drop PDFs into a directory, the agent reads them, and you interact through a terminal CLI — like a co-pilot for your papers.
 
-## Features
+## How It Works
 
-- **PDF Document Surface** — canvas rendering with positioned text layer, zoom, continuous scroll
-- **Handwriting & Ink** — pen, highlighter, eraser with pressure support; normalized page coordinates survive zoom/resize
-- **Annotated Export** — flatten ink strokes to PDF canvas, download as PNG
-- **OCR** — tesseract.js integration for scanned/image-only PDF pages
-- **Multi-Session Agents** — create independent sessions with isolated context, history, and run state
-- **Session Fork & Branch** — fork from any assistant message, switch between branches
-- **Multi-Runtime** — local evidence agent + OMP RPC + Pi RPC + OpenCode HTTP adapters
-- **Sandbox Experiments** — virtual filesystem, runs, published artifacts with policy enforcement
-- **Export/Import** — `.paperwitha` workspace package for backup and migration
-- **Structured Reading Brief** — confidence-classified sections (stated/inferred/general-knowledge/insufficient-evidence)
-- **Citation References** — clickable source tags jump to evidence with flash animation
-- **Split-Pane Layout** — draggable divider with persistent ratio
+```
+~/papers/                     ← drop PDFs here
+    ├── attention.pdf
+    └── transformer-xl.pdf
+
+~/.local/share/paperwitha/    ← XDG data store
+    ├── papers/               ← ingested PDFs (SHA-256 addressed)
+    ├── results/              ← agent analysis per paper
+    └── index.json            ← global index
+```
+
+1. Put a PDF in `~/.local/share/paperwitha/papers/` (or `papers` CLI `ingest`)
+2. The watcher detects it, spawns a Pi subagent to analyze it
+3. Results are stored in `results/<hash>.json`
+4. Open the Web UI — read papers in the left panel, talk to the agent in the terminal panel
 
 ## Quick Start
 
 ```bash
-# Install dependencies
 corepack pnpm install --frozen-lockfile
-
-# Type check
 corepack pnpm typecheck
-
-# Run tests
 corepack pnpm test
-
-# Start Web dev server
-corepack pnpm dev:web
-
-# Build Web
 corepack pnpm build:web
+corepack pnpm dev:web
+```
 
-# Run Gate 0 probes
-corepack pnpm probe:gate0
-corepack pnpm probe:gate0:validate
+## CLI
+
+```bash
+# List indexed papers
+npx tsx packages/paper-store/cli.ts list
+
+# Ingest a PDF
+npx tsx packages/paper-store/cli.ts ingest ~/Downloads/paper.pdf
+
+# Show agent analysis result
+npx tsx packages/paper-store/cli.ts result <hash>
+
+# Start the file watcher (auto-analyzes new PDFs via Pi)
+pnpm --filter @paperwitha/watcher start
 ```
 
 ## Architecture
 
 ```
 packages/
-├── agent-core/          Session/Branch/Run/Event, Sandbox, Runtime, Export
-├── agent-runtime-node/  OMP RPC, Pi RPC, OpenCode HTTP adapters, AgentHost
+├── agent-core/          Session/Branch/Run/Event, Sandbox, Runtime
+├── agent-runtime-node/  OMP RPC, Pi RPC, OpenCode HTTP adapters
 ├── ai-core/             ProviderManifest, ProviderClient (SSE/JSON)
-├── context/             ContextSet, ContextBuilder (lexical + budget)
+├── context/             ContextSet, ContextBuilder
 ├── domain/              DocumentGraph, InkStroke, ReadingBrief
 ├── evidence/            Annotation
-├── platform/            PlatformShell (cross-platform state)
-├── plugin-contracts/    PluginManifest, PluginLifecycle
+├── paper-store/         XDG path resolution, paper index, ingest, results
+├── platform/            PlatformShell
+├── plugin-contracts/    PluginManifest
 ├── plugin-core/         PluginHost
 ├── reader-core/         DocumentGraphCache, PaperView, EvidenceAnchor
 ├── storage/             StoragePort, BlobStore, JsonRepository
+├── sync/                SyncPort, Outbox, Inbox, InMemorySyncServer
 └── workspace/           LayoutTree, LayoutHistory
 
+services/
+├── api/                 Sync API HTTP server
+└── watcher/             File watcher + Pi subagent trigger
+
 apps/
-├── web/                 Vite + TypeScript DOM (complete)
-├── desktop/             Tauri 2 + Rust (native stack scaffolded)
-└── mobile/              Expo 52 + React Native (shell)
+├── web/                 PDF reader + terminal CLI
+├── desktop/             Tauri 2 + Rust
+└── mobile/              Expo 52 + React Native
 ```
 
 ## Storage
 
-### Web (current)
-- `localStorage` with JSON serialization
-- `StoragePortBlobStore` for PDF blobs (base64, SHA-256 addressed)
-
-### Desktop (scaffolded)
-- `tauri-plugin-sql` → SQLite
-- `tauri-plugin-stronghold` → encrypted secret store
-- `tauri-plugin-fs` → file system access
-
-### Planned
-- IndexedDB / OPFS for Web
-- Expo SQLite for Mobile
-
-## Gate 0 Validation
-
-```text
-probes:        6 (pdf, shared-graph, docking, provider, context, local-sessions)
-validator:     48/48 checks pass
-```
+- **XDG data**: `~/.local/share/paperwitha/` — papers, results, index
+- **XDG cache**: `~/.cache/paperwitha/` — subagent artifacts
+- **XDG config**: `~/.config/paperwitha/` — agent config
+- **Web**: `localStorage` for session state; blob store with in-memory fallback
 
 ## License
 

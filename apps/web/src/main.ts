@@ -27,6 +27,42 @@ import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 import { createWorker } from "tesseract.js";
 import { BrowserStoragePort, JsonRepository, StoragePortBlobStore } from "@paperwitha/storage";
 import { createAnnotation, type Annotation } from "@paperwitha/evidence";
+var shellWs: WebSocket | null = null;
+
+function initShell(): void {
+  var container = document.querySelector<HTMLElement>("#xterm-container");
+  if (!container) return;
+  container.innerHTML = "<div class='shell-output' id='shell-output'></div><div class='shell-input-wrap'><span class='shell-prompt'>$</span><input class='shell-input' id='shell-input' autofocus /></div>";
+  var output = document.querySelector<HTMLElement>("#shell-output")!;
+  var input = document.querySelector<HTMLInputElement>("#shell-input")!;
+
+  function shellWrite(text: string) {
+    output.textContent += text;
+    output.scrollTop = output.scrollHeight;
+  }
+
+  function connect() {
+    if (shellWs) { try { shellWs.close(); } catch (_) {} }
+    shellWs = new WebSocket("ws://localhost:4121");
+    shellWs.onopen = function () { shellWrite("\n"); };
+    shellWs.onmessage = function (e) { shellWrite(e.data); };
+    shellWs.onclose = function () { shellWrite("\n[disconnected]\n"); setTimeout(connect, 3000); };
+    shellWs.onerror = function () { shellWrite("\n[error]\n"); };
+  }
+
+  input.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      var text = input.value;
+      input.value = "";
+      if (shellWs?.readyState === WebSocket.OPEN) shellWs.send(text + "\n");
+    }
+  });
+
+  connect();
+}
+
+
 import { ProviderClient } from "@paperwitha/ai-core";
 
 const blobStore = new StoragePortBlobStore();
@@ -406,6 +442,7 @@ function render() {
   bindEvents();
   setupPdfViewer();
   scheduleInkSetup();
+  setTimeout(function () { initShell(); }, 200);
 }
 
 
@@ -434,30 +471,11 @@ function renderWorkspace(paper: StoredPaper) {
     return renderPagePlaceholder(page, annotationCount, paper.graph.blobHash);
   }).join("");
   const readerWidth = state.assistantOpen ? `${Math.round(state.splitRatio * 100)}%` : "100%";
-  return `<div class="split-pane" id="split-pane"><section class="reader-panel" style="flex:0 0 ${readerWidth};min-width:0;"><div class="reader-scroll" id="reader-scroll">${readerContent}</div></section>${state.assistantOpen ? `<div class="split-divider" id="split-divider" title="Drag to resize"></div><aside class="assistant-panel" style="flex:1;min-width:280px;"><div class="assistant-tabs"><button class="tab ${state.activeTab === "agents" ? "active" : ""}" id="agent-tab">Agents</button><button class="tab ${state.activeTab === "brief" ? "active" : ""}" id="brief-tab">Brief</button></div>${state.activeTab === "agents" ? renderAgentWorkspace(paper) : renderBrief(paper)}</aside>` : ""}</div>`;
+  return `<div class="split-pane" id="split-pane"><section class="reader-panel" style="flex:0 0 ${readerWidth};min-width:0;"><div class="reader-scroll" id="reader-scroll">${readerContent}</div></section>${state.assistantOpen ? `<div class="split-divider" id="split-divider" title="Drag to resize"></div><aside class="assistant-panel" style="flex:1;min-width:280px;"><div class="terminal-header">TERMINAL</div>${renderTerminal(paper)}</aside>` : ""}</div>`;
 }
 
-function renderAgentWorkspace(paper: StoredPaper) {
-  const session = activeSession();
-  const sessions = state.agentWorkspace.sessions.filter((s) => s.status !== "archived");
-  const tabs = sessions.map((candidate) => {
-    const rt = runtimeMeta(candidate.runtimeProfileId);
-    return `<button class="agent-session-tab ${candidate.sessionId === session?.sessionId ? "active" : ""}" data-session-id="${candidate.sessionId}" title="${escapeHtml(candidate.title)} — ${escapeHtml(rt.name)}"><span class="session-status ${candidate.status}"></span><span class="agent-icon">${escapeHtml(rt.icon)}</span><span>${escapeHtml(candidate.title)}</span></button>`;
-  }).join("");
-  if (!session) return `<div class="agent-session-bar"><div class="agent-session-tabs"></div><button class="session-action" id="new-session" title="New session">+</button></div><div class="chat-empty"><div class="assistant-orb">✦</div><h3>Create an agent session</h3><p>Each session keeps its own context, history, branch, and run state.</p></div>`;
-  const branch = activeAgentBranch(session);
-  const messages = branch.messages.length ? branch.messages.map((message) => `<div class="message ${message.role}" data-message-id="${message.messageId}"><div class="message-label">${message.role === "user" ? "You" : "Evidence Agent"}${message.role === "assistant" && !running ? `<button class="fork-button" data-fork-from="${message.messageId}" title="Fork new branch from this message">⇆</button>` : ""}</div><p>${escapeHtml(message.text)}</p></div>`).join("") : `<div class="chat-empty"><div class="assistant-orb">✦</div><h3>Ask with an independent session</h3><p>Select evidence in any paper. This session keeps a frozen context snapshot for every run.</p><div class="suggestions"><button data-suggestion="What is the main contribution?">Main contribution</button><button data-suggestion="What evidence supports the claim?">Evidence</button></div></div>`;
-  const contextCount = session.context.fixedSourceIds.length;
-  const running = branch.activeRunId !== null;
-  const branchTabs = session.branches.length > 1 ? `<div class="branch-tabs">${session.branches.map((b) => `<button class="branch-tab ${b.branchId === session.activeBranchId ? "active" : ""}" data-branch-id="${b.branchId}">${escapeHtml(b.title)}</button>`).join("")}</div>` : "";
-  const rt = runtimeMeta(session.runtimeProfileId);
-  const ag = agentMeta(session.agentProfileId);
-  const sourceTags = session.context.fixedSourceIds.slice(0, 3).map((sourceId) => {
-    const text = session.context.sourceTexts[sourceId]?.slice(0, 30) ?? sourceId;
-    return `<button class="source-tag" data-jump-source="${sourceId}" title="Jump to evidence: ${escapeHtml(text)}">${escapeHtml(text)}…</button>`;
-  }).join("");
-  const moreCount = session.context.fixedSourceIds.length > 3 ? ` +${session.context.fixedSourceIds.length - 3}` : "";
-  return `<div class="agent-session-bar"><div class="agent-session-tabs">${tabs}</div><button class="session-action" id="new-session" title="New session for this paper">+</button><button class="session-action" id="archive-session" title="Archive active session">×</button></div><div class="agent-session-meta"><span><span class="agent-icon">${escapeHtml(rt.icon)}</span> ${escapeHtml(session.title)}</span><small>${escapeHtml(ag.name)} · ${escapeHtml(rt.name)} · ${session.branches.length} branch${session.branches.length === 1 ? "" : "es"}</small></div>${branchTabs}<div class="context-strip"><span class="context-dot"></span><span>${contextCount ? `${contextCount} source${contextCount === 1 ? "" : "s"}` : `${session.context.documentIds.length} paper${session.context.documentIds.length === 1 ? "" : "s"}`}</span><span class="source-tags">${sourceTags}${moreCount}</span><button id="clear-context">Clear fixed</button></div><div class="chat-messages" id="chat-messages">${messages}</div><form class="chat-form" id="chat-form"><textarea id="chat-input" rows="2" placeholder="Ask this agent session…" ${running ? "disabled" : ""}></textarea><div class="chat-form-footer"><span>${running ? `${escapeHtml(ag.name)} running…` : providerConfig ? `Remote · ${escapeHtml(providerConfig.model)}` : `${escapeHtml(ag.name)} · no network`}</span><button class="send-button" type="submit" ${running ? "disabled" : ""}>Send ↗</button></div></form>`;
+function renderTerminal(_paper: StoredPaper) {
+  return `<div class="terminal-panel"><div id="xterm-container"></div></div>`;
 }
 
 function renderBrief(paper: StoredPaper) {
@@ -472,6 +490,7 @@ function renderBrief(paper: StoredPaper) {
     : `<div class="brief-section"><span>CORE SUMMARY</span><p>${escapeHtml(paper.brief)}</p></div>`;
   return `<div class="brief-content"><span class="eyebrow">STRUCTURED OUTPUT</span><h3>Reading Brief</h3>${paper.briefVersions.length > 1 ? `<div class="brief-versions"><span>${paper.briefVersions.length} version${paper.briefVersions.length === 1 ? "" : "s"}</span></div>` : ""}${sectionsHtml}<button class="secondary-button full-width" id="refresh-brief">Regenerate from first pages</button></div>`;
 }
+
 
 function configureProvider() {
   const endpoint = window.prompt("Provider endpoint (blank disables remote AI)", providerConfig?.endpoint ?? "")?.trim() ?? "";
@@ -503,14 +522,11 @@ function bindEvents() {
   document.querySelector<HTMLButtonElement>("#new-session")?.addEventListener("click", () => { const paper = activePaper(); if (paper) { createSessionForPaper(paper); render(); } });
   document.querySelector<HTMLButtonElement>("#archive-session")?.addEventListener("click", () => { const session = activeSession(); if (!session) return; try { state.agentWorkspace = archiveAgentSession(state.agentWorkspace, session.sessionId, new Date().toISOString()); saveState(); render(); } catch (error) { window.alert(error instanceof Error ? error.message : String(error)); } });
   document.querySelectorAll<HTMLButtonElement>("[data-suggestion]").forEach((button) => button.addEventListener("click", () => { const input = document.querySelector<HTMLTextAreaElement>("#chat-input"); if (input) { input.value = button.dataset.suggestion ?? ""; input.focus(); } }));
-  document.querySelector<HTMLButtonElement>("#agent-tab")?.addEventListener("click", () => { state.activeTab = "agents"; saveState(); render(); });
-  document.querySelector<HTMLButtonElement>("#brief-tab")?.addEventListener("click", () => { state.activeTab = "brief"; saveState(); render(); });
   document.querySelector<HTMLButtonElement>("#clear-context")?.addEventListener("click", () => { const session = activeSession(); if (!session) return; storeSession(updateAgentSessionContext(session, { ...session.context, fixedSourceIds: [], sourceTexts: {} }, new Date().toISOString())); render(); });
   document.querySelectorAll<HTMLButtonElement>("[data-jump-source]").forEach((button) => button.addEventListener("click", () => { const sourceId = button.dataset.jumpSource; if (sourceId) jumpToSource(sourceId); }));
   document.querySelectorAll<HTMLButtonElement>("[data-ocr-page]").forEach((button) => button.addEventListener("click", () => { const pn = Number(button.dataset.ocrPage); if (pn) void runOcr(pn); }));
   document.querySelector<HTMLButtonElement>("#refresh-brief")?.addEventListener("click", () => { const paper = activePaper(); if (paper) { paper.brief = makeBrief(paper.graph); saveState(); render(); } });
   document.querySelectorAll<HTMLInputElement>("#file-input, #welcome-file-input").forEach((input) => input.addEventListener("change", async () => { const file = input.files?.[0]; if (file) await importFile(file); }));
-  document.querySelector<HTMLFormElement>("#chat-form")?.addEventListener("submit", (event) => { event.preventDefault(); void sendAgentPrompt(); });
   const reader = document.querySelector<HTMLElement>("#reader-scroll");
   reader?.addEventListener("scroll", () => {
     const paper = activePaper();
