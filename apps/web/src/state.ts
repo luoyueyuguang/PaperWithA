@@ -102,6 +102,7 @@ export type AppState = {
   sidebarOpen: boolean;
   assistantOpen: boolean;
   splitRatio: number;
+  terminalHeight: number;
   selectedText: string;
   selectedPage: number | null;
   agentWorkspace: AgentWorkspaceState;
@@ -147,7 +148,7 @@ export function setSelectionToolbar(t: HTMLDivElement | null) { selectionToolbar
 // --- State functions ---
 
 export function emptyState(): AppState {
-  return { papers: [], activePaperId: null, activeTab: "agents", sidebarOpen: true, assistantOpen: true, splitRatio: 0.55, selectedText: "", selectedPage: null, agentWorkspace: createAgentWorkspace(), inkStrokes: [] };
+  return { papers: [], activePaperId: null, activeTab: "agents", sidebarOpen: true, assistantOpen: true, splitRatio: 0.55, terminalHeight: 0.28, selectedText: "", selectedPage: null, agentWorkspace: createAgentWorkspace(), inkStrokes: [] };
 }
 
 function makeInitialSession(paper: StoredPaper, index: number, now: string): AgentSession {
@@ -215,6 +216,7 @@ export function loadState(): AppState {
     selectedText: "",
     selectedPage: null,
     agentWorkspace: migrateWorkspace(parsed, papers, legacyPapers),
+    terminalHeight: typeof parsed.terminalHeight === "number" && parsed.terminalHeight > 0.1 && parsed.terminalHeight < 0.7 ? parsed.terminalHeight : 0.28,
     splitRatio: typeof parsed.splitRatio === "number" && parsed.splitRatio > 0.2 && parsed.splitRatio < 0.85 ? parsed.splitRatio : 0.55,
   };
   stateRepository.write(next);

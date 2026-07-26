@@ -35,8 +35,8 @@ var termWs: WebSocket | null = null;
 
 async function initShell(): Promise<void> {
   var container = document.querySelector<HTMLElement>("#xterm-container");
+  console.log("[term] initShell, container:", !!container);
   if (!container) return;
-  if (term) { term.dispose(); term = null; }
 
   var [{ Terminal }, { FitAddon }] = await Promise.all([
     import("xterm"),
@@ -49,16 +49,15 @@ async function initShell(): Promise<void> {
     theme: { background: "#0a101d", foreground: "#c8d4e6", cursor: "#c9f269" },
     cursorBlink: true,
   });
-  termFit = new FitAddon();
   term.loadAddon(termFit);
   term.open(container);
-  termFit.fit();
+  requestAnimationFrame(() => { termFit?.fit(); });
 
   function connect() {
     if (termWs) { try { termWs.close(); } catch {} }
     termWs = new WebSocket("ws://localhost:4121");
-    termWs.onopen = function () { term?.write(""); };
-    termWs.onmessage = function (e) { term?.write(e.data); };
+    termWs.onopen = function () { termWs?.send("\n"); };
+    termWs.onmessage = function (e) { term?.write(typeof e.data === "string" ? e.data : new TextDecoder().decode(e.data as ArrayBuffer)); };
     termWs.onclose = function () { setTimeout(connect, 2000); };
     termWs.onerror = function () { setTimeout(connect, 2000); };
   }
@@ -235,20 +234,24 @@ function render() {
   const paper = activePaper();
   app.innerHTML = `
     <div class="app-shell ${state.sidebarOpen ? "sidebar-open" : "sidebar-closed"} ${state.assistantOpen ? "assistant-open" : "assistant-closed"}">
-      <header class="topbar">
-        <button class="brand" id="home-button" aria-label="PaperWithA home"><span class="brand-mark">P</span><span>PaperWithA</span></button>
-        <div class="topbar-actions"><label class="import-button"><input id="file-input" type="file" accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown" hidden />Import paper</label><button class="icon-button" id="add-demo" title="Load a demo paper">+</button><button class="avatar ${providerConfig ? "provider-active" : ""}" id="provider-settings" title="Configure AI provider">${providerConfig ? "AI" : "L"}</button></div>
-      </header>
       <div class="shell-body">
         <aside class="sidebar">
-          <div class="sidebar-heading"><span>LIBRARY</span><strong>${state.papers.length}</strong></div>
+          <div class="sidebar-heading">
+            <span class="brand-mark">P</span>
+            <span>LIBRARY</span>
+            <strong>${state.papers.length}</strong>
+            <div class="sidebar-tools">
+              <label class="import-button" title="Import paper"><input id="file-input" type="file" accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown" hidden />Import</label>
+              <button class="icon-button" id="toggle-assistant" title="${state.assistantOpen ? "Hide terminal" : "Show terminal"}">${state.assistantOpen ? "▾" : "▸"}</button>
+              <button class="avatar ${providerConfig ? "provider-active" : ""}" id="provider-settings" title="Configure AI provider">${providerConfig ? "AI" : "L"}</button>
+            </div>
+          </div>
           <button class="demo-card" id="add-demo-card"><span class="demo-icon">✦</span><span><strong>Try the demo paper</strong><small>Explore without uploading</small></span></button>
           <div class="library-list">${state.papers.length ? state.papers.map((candidate) => `<div class="paper-item ${candidate.id === paper?.id ? "active" : ""}" data-paper-id="${candidate.id}"><span class="paper-icon">▤</span><span class="paper-item-copy"><strong>${escapeHtml(candidate.title)}</strong><small>${escapeHtml(candidate.sourceName)} · ${candidate.graph.pages.length} pages</small></span><button class="paper-del-btn" data-delete-paper="${candidate.id}" title="Remove">&times;</button></div>`).join("") : `<div class="empty-library"><div class="empty-icon">⌁</div><strong>Your library is empty</strong><span>Import a paper to begin.</span></div>`}</div>
           ${state.papers.length ? `<div class="sidebar-actions"><button class="ghost-button" id="clear-library">Clear local library</button><button class="ghost-button" id="export-workspace" title="Export entire workspace as .paperwitha">Export</button><label class="ghost-button"><input id="import-workspace" type="file" accept=".json" hidden />Import</label></div>` : ""}
         </aside>
         <button class="sidebar-edge-toggle" id="toggle-sidebar" title="${state.sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}">${state.sidebarOpen ? "◀" : "▶"}</button>
         <main class="main-area">
-          <div class="workspace-toolbar"><div class="crumb">Library <span>/</span> <strong>${paper ? escapeHtml(paper.title) : "Welcome"}</strong></div><div class="toolbar-actions">${paper ? `<span class="saved-state">● Saved locally</span><button class="ghost-button" id="toggle-assistant">${state.assistantOpen ? "Hide agents" : "Show agents"}</button>` : ""}</div></div>
           ${paper ? renderWorkspace(paper) : renderWelcome()}
         </main>
       </div>
@@ -284,12 +287,8 @@ function renderWorkspace(paper: StoredPaper) {
     const annotationCount = paper.annotations.filter((a) => a.anchor.pageId === page.pageId).length;
     return renderPagePlaceholder(page, annotationCount, paper.graph.blobHash);
   }).join("");
-  const readerWidth = state.assistantOpen ? `${Math.round(state.splitRatio * 100)}%` : "100%";
-  return `<div class="split-pane" id="split-pane"><section class="reader-panel" style="flex:0 0 ${readerWidth};min-width:0;"><div class="reader-scroll" id="reader-scroll">${readerContent}</div></section>${state.assistantOpen ? `<div class="split-divider" id="split-divider" title="Drag to resize"></div><aside class="assistant-panel" style="flex:1;min-width:280px;"><div class="terminal-header">TERMINAL</div>${renderTerminal(paper)}</aside>` : ""}</div>`;
-}
-
-function renderTerminal(_paper: StoredPaper) {
-  return `<div class="terminal-panel"><div id="xterm-container"></div></div>`;
+  const termHeight = state.assistantOpen ? `${Math.round(state.terminalHeight * 100)}%` : "0";
+  return `<div class="split-pane" id="split-pane"><section class="reader-panel"><div class="reader-scroll" id="reader-scroll">${readerContent}</div></section>${state.assistantOpen ? `<div class="terminal-divider" id="terminal-divider" title="Drag to resize"></div><div class="terminal-panel"><div class="terminal-header">TERMINAL</div><div id="xterm-container"></div></div>` : ""}</div>`;
 }
 
 function renderBrief(paper: StoredPaper) {
@@ -362,22 +361,21 @@ document.querySelector<HTMLButtonElement>("#clear-library")?.addEventListener("c
   document.querySelector<HTMLButtonElement>("#export-annotated")?.addEventListener("click", () => { void exportPageAsPng(); });
   document.querySelector<HTMLButtonElement>("#export-workspace")?.addEventListener("click", exportWorkspace);
   document.querySelector<HTMLInputElement>("#import-workspace")?.addEventListener("change", async (event) => { const file = (event.target as HTMLInputElement).files?.[0]; if (file) { await importWorkspace(file); (event.target as HTMLInputElement).value = ""; } });
-  const divider = document.querySelector<HTMLElement>("#split-divider");
+  const divider = document.querySelector<HTMLElement>("#terminal-divider");
   const pane = document.querySelector<HTMLElement>("#split-pane");
   if (divider && pane) {
     let dragging = false;
     divider.addEventListener("pointerdown", (event) => { dragging = true; divider.classList.add("dragging"); event.preventDefault(); });
     document.addEventListener("pointermove", (event) => {
       if (!dragging || !pane) return;
-      const ratio = Math.max(0.2, Math.min(0.85, (event.clientX - pane.getBoundingClientRect().left) / pane.getBoundingClientRect().width));
-      state.splitRatio = ratio;
-      const readerEl = pane.querySelector<HTMLElement>(".reader-panel");
-      if (readerEl) readerEl.style.flex = `0 0 ${Math.round(ratio * 100)}%`;
+      const rect = pane.getBoundingClientRect();
+      const ratio = 1 - Math.max(0.1, Math.min(0.7, (event.clientY - rect.top) / rect.height));
+      state.terminalHeight = ratio;
+      const termEl = pane.querySelector<HTMLElement>(".terminal-panel");
+      if (termEl) termEl.style.flex = `0 0 ${Math.round(ratio * 100)}%`;
     });
     document.addEventListener("pointerup", () => { if (dragging) { dragging = false; divider.classList.remove("dragging"); saveState(); } });
   }
-}
-
 function jumpToSource(sourceId: string): void {
   const paper = activePaper();
   if (!paper) return;
@@ -396,6 +394,7 @@ function jumpToSource(sourceId: string): void {
       return;
     }
   }
+}
 }
 async function runOcr(pageNumber: number): Promise<void> {
   const paper = activePaper();
