@@ -19,11 +19,11 @@ import {
   type AgentWorkspaceState,
 } from "@paperwitha/agent-core";
 import { buildContext, type ContextSet, type ContextSource } from "@paperwitha/context";
-import { createReadingBriefVersion, READING_BRIEF_SECTIONS, type ReadingBriefVersion } from "@paperwitha/domain";
+import { createReadingBriefVersion, READING_BRIEF_SECTIONS, type ReadingBriefVersion, type DocumentGraph, type DocumentPage } from "@paperwitha/domain";
 import { createCrossPageAnchor, createPaperViewState, updatePaperView, type PaperViewState } from "@paperwitha/reader-core";
 import { BrowserStoragePort, JsonRepository, StoragePortBlobStore } from "@paperwitha/storage";
 import { createInkStroke, canvasToNormalized, type InkStroke, type InkTool } from "@paperwitha/domain";
-
+import type { Annotation } from "@paperwitha/evidence";
 // --- Shared state & constants ---
 
 export const STORAGE_KEY = "paperwitha.web.v3";
@@ -140,7 +140,7 @@ Self-attention, sometimes called intra-attention, relates different positions in
 
 // --- State variables ---
 
-export const state: AppState = loadState();
+export const state: AppState = (() => { try { return loadState(); } catch (e) { console.error("state init failed:", e); return emptyState(); } })();
 export let providerConfig: ProviderConfig | null = null;
 export let selectionToolbar: HTMLDivElement | null = null;
 
@@ -202,32 +202,32 @@ function migrateWorkspace(parsed: PersistedState, papers: StoredPaper[], legacyP
 }
 export function loadState(): AppState {
   // Try current version first
-  let current = stateRepository.read(null);
-  if (current !== null) {
-    const parsed = current as PersistedState;
-    const papers = (Array.isArray(parsed.papers) ? parsed.papers : []).map((p: Record<string, unknown>) => {
+  const current = stateRepository.read({} as PersistedState);
+  if (current && Object.keys(current).length > 0) {
+    const { papers: _p, activePaperId, activeTab, sidebarOpen, assistantOpen, selectedText, selectedPage, agentWorkspace, terminalHeight, splitRatio, inkStrokes } = current;
+    const papers = (Array.isArray(_p) ? _p : []).map((p: Record<string, unknown>) => {
       const { chat: _c, ...paper } = p as Record<string, unknown>;
       return { ...paper, annotations: (paper.annotations as unknown[]) ?? [] } as unknown as StoredPaper;
     });
-    const next: AppState = {
+    return {
       papers,
-      activePaperId: parsed.activePaperId ?? papers[0]?.id ?? null,
-      activeTab: parsed.activeTab === "brief" ? "brief" : "agents",
-      sidebarOpen: parsed.sidebarOpen ?? true,
-      assistantOpen: parsed.assistantOpen ?? true,
+      activePaperId: activePaperId ?? papers[0]?.id ?? null,
+      activeTab: activeTab === "brief" ? "brief" : "agents",
+      sidebarOpen: sidebarOpen ?? true,
+      assistantOpen: assistantOpen ?? true,
       selectedText: "",
       selectedPage: null,
-      agentWorkspace: (parsed.agentWorkspace as AgentWorkspaceState) ?? createAgentWorkspace(),
-      terminalHeight: typeof parsed.terminalHeight === "number" && parsed.terminalHeight > 0.1 && parsed.terminalHeight < 0.7 ? parsed.terminalHeight : 0.28,
-      splitRatio: typeof parsed.splitRatio === "number" && parsed.splitRatio > 0.2 && parsed.splitRatio < 0.85 ? parsed.splitRatio : 0.55,
+      agentWorkspace: (agentWorkspace as AgentWorkspaceState) ?? createAgentWorkspace(),
+      terminalHeight: typeof terminalHeight === "number" && terminalHeight > 0.1 && terminalHeight < 0.7 ? terminalHeight : 0.28,
+      splitRatio: typeof splitRatio === "number" && splitRatio > 0.2 && splitRatio < 0.85 ? splitRatio : 0.55,
       inkStrokes: [],
     };
-    return next;
   }
   // Try v2, then v1 legacy
-  const legacy = legacyStateRepository.read(null) ?? legacyStateRepositoryV1.read(null);
-  if (legacy !== null) {
-    const parsed = legacy as PersistedState;
+  const legacy = legacyStateRepository.read({} as PersistedState);
+  const legacyV1 = legacyStateRepositoryV1.read({} as PersistedState);
+  const parsed = (Object.keys(legacy).length > 0 ? legacy : legacyV1) as PersistedState;
+  if (Object.keys(parsed).length > 0) {
     const legacyPapers = Array.isArray(parsed.papers) ? parsed.papers : [];
     const papers = legacyPapers.map((lp: Record<string, unknown>) => {
       const { chat: _legacyChat, ...paper } = lp;
@@ -249,7 +249,6 @@ export function loadState(): AppState {
     stateRepository.write(next);
     return next;
   }
-  // Fresh start
   return emptyState();
 }
 

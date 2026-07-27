@@ -73,7 +73,7 @@ async function initShell(): Promise<void> {
 
 
 import { ProviderClient } from "@paperwitha/ai-core";
-
+import { createInkStroke } from "@paperwitha/domain";
 import {
   state, app, uid, escapeHtml, saveState,
   activePaper, activeSession, storeSession, createSessionForPaper, ensureActiveSession,
