@@ -35,8 +35,8 @@ var termWs: WebSocket | null = null;
 
 async function initShell(): Promise<void> {
   var container = document.querySelector<HTMLElement>("#xterm-container");
-  console.log("[term] initShell, container:", !!container);
   if (!container) return;
+  if (term) { term.dispose(); term = null; }
 
   var [{ Terminal }, { FitAddon }] = await Promise.all([
     import("xterm"),
