@@ -26,8 +26,9 @@ import { createInkStroke, canvasToNormalized, type InkStroke, type InkTool } fro
 
 // --- Shared state & constants ---
 
-export const STORAGE_KEY = "paperwitha.web.v2";
-const LEGACY_STORAGE_KEY = "paperwitha.web.v1";
+export const STORAGE_KEY = "paperwitha.web.v3";
+const LEGACY_STORAGE_KEY = "paperwitha.web.v2";
+const LEGACY_STORAGE_KEY_V1 = "paperwitha.web.v1";
 export const LOCAL_RUNTIME_PROFILE_ID = "paperwitha-local-runtime";
 export const LOCAL_AGENT_PROFILE_ID = "paperwitha-evidence-agent";
 
@@ -66,6 +67,7 @@ export const escapeHtml = (value: string) => value.replace(/[&<>'"]/g, (characte
 
 export const stateRepository = new JsonRepository<PersistedState>(new BrowserStoragePort(), STORAGE_KEY);
 const legacyStateRepository = new JsonRepository<PersistedState>(new BrowserStoragePort(), LEGACY_STORAGE_KEY);
+const legacyStateRepositoryV1 = new JsonRepository<PersistedState>(new BrowserStoragePort(), LEGACY_STORAGE_KEY_V1);
 
 export const blobStore = new StoragePortBlobStore();
 export const textItemCache = new Map<string, Array<{ str: string; x: number; y: number; width: number; height: number; fontSize: number }>>();
@@ -198,29 +200,57 @@ function migrateWorkspace(parsed: PersistedState, papers: StoredPaper[], legacyP
   }
   return workspace;
 }
-
 export function loadState(): AppState {
-  const current = stateRepository.read({});
-  const parsed = current.papers ? current : legacyStateRepository.read({});
-  const legacyPapers = Array.isArray(parsed.papers) ? parsed.papers : [];
-  const papers = legacyPapers.map((legacyPaper) => {
-    const { chat: _legacyChat, ...paper } = legacyPaper;
-    return { ...paper, annotations: paper.annotations ?? [] };
-  });
-  const next: AppState = {
-    papers,
-    activePaperId: parsed.activePaperId ?? papers[0]?.id ?? null,
-    activeTab: parsed.activeTab === "brief" ? "brief" : "agents",
-    sidebarOpen: parsed.sidebarOpen ?? true,
-    assistantOpen: parsed.assistantOpen ?? true,
-    selectedText: "",
-    selectedPage: null,
-    agentWorkspace: migrateWorkspace(parsed, papers, legacyPapers),
-    terminalHeight: typeof parsed.terminalHeight === "number" && parsed.terminalHeight > 0.1 && parsed.terminalHeight < 0.7 ? parsed.terminalHeight : 0.28,
-    splitRatio: typeof parsed.splitRatio === "number" && parsed.splitRatio > 0.2 && parsed.splitRatio < 0.85 ? parsed.splitRatio : 0.55,
-  };
-  stateRepository.write(next);
-  return next;
+  // Try current version first
+  let current = stateRepository.read(null);
+  if (current !== null) {
+    const parsed = current as PersistedState;
+    const papers = (Array.isArray(parsed.papers) ? parsed.papers : []).map((p: Record<string, unknown>) => {
+      const { chat: _c, ...paper } = p as Record<string, unknown>;
+      return { ...paper, annotations: (paper.annotations as unknown[]) ?? [] } as unknown as StoredPaper;
+    });
+    const next: AppState = {
+      papers,
+      activePaperId: parsed.activePaperId ?? papers[0]?.id ?? null,
+      activeTab: parsed.activeTab === "brief" ? "brief" : "agents",
+      sidebarOpen: parsed.sidebarOpen ?? true,
+      assistantOpen: parsed.assistantOpen ?? true,
+      selectedText: "",
+      selectedPage: null,
+      agentWorkspace: (parsed.agentWorkspace as AgentWorkspaceState) ?? createAgentWorkspace(),
+      terminalHeight: typeof parsed.terminalHeight === "number" && parsed.terminalHeight > 0.1 && parsed.terminalHeight < 0.7 ? parsed.terminalHeight : 0.28,
+      splitRatio: typeof parsed.splitRatio === "number" && parsed.splitRatio > 0.2 && parsed.splitRatio < 0.85 ? parsed.splitRatio : 0.55,
+      inkStrokes: [],
+    };
+    return next;
+  }
+  // Try v2, then v1 legacy
+  const legacy = legacyStateRepository.read(null) ?? legacyStateRepositoryV1.read(null);
+  if (legacy !== null) {
+    const parsed = legacy as PersistedState;
+    const legacyPapers = Array.isArray(parsed.papers) ? parsed.papers : [];
+    const papers = legacyPapers.map((lp: Record<string, unknown>) => {
+      const { chat: _legacyChat, ...paper } = lp;
+      return { ...paper, annotations: (paper.annotations as unknown[]) ?? [] } as unknown as StoredPaper;
+    });
+    const next: AppState = {
+      papers,
+      activePaperId: parsed.activePaperId ?? papers[0]?.id ?? null,
+      activeTab: parsed.activeTab === "brief" ? "brief" : "agents",
+      sidebarOpen: parsed.sidebarOpen ?? true,
+      assistantOpen: parsed.assistantOpen ?? true,
+      selectedText: "",
+      selectedPage: null,
+      agentWorkspace: migrateWorkspace(parsed, papers as unknown as StoredPaper[], legacyPapers as unknown as LegacyPaper[]),
+      terminalHeight: 0.28,
+      splitRatio: 0.55,
+      inkStrokes: [],
+    };
+    stateRepository.write(next);
+    return next;
+  }
+  // Fresh start
+  return emptyState();
 }
 
 export function saveState() {
