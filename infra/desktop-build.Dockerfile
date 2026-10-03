@@ -13,4 +13,4 @@ WORKDIR /workspace
 COPY . .
 RUN corepack pnpm install --frozen-lockfile
 RUN corepack pnpm build:web
-RUN corepack pnpm --filter @paperwitha/desktop build:native
+RUN corepack pnpm --filter @paperwitha/desktop build
