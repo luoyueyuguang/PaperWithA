@@ -1,5 +1,10 @@
 {
-  "extends": "../../tsconfig.json",
-  "compilerOptions": { "jsx": "react-native", "module": "ESNext", "moduleResolution": "Bundler", "types": ["node"] },
-  "include": ["App.tsx", "src/**/*.ts"]
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "jsx": "react-jsx",
+    "moduleResolution": "bundler",
+    "types": ["node", "react"]
+  },
+  "include": ["App.tsx", "index.js", "src/**/*.ts", "src/**/*.tsx"]
 }

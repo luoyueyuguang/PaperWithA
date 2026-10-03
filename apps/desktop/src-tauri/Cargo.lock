@@ -2045,6 +2045,7 @@ dependencies = [
 name = "paperwitha-desktop"
 version = "0.1.0"
 dependencies = [
+ "serde",
  "tauri",
  "tauri-build",
 ]
