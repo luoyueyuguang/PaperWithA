@@ -95,7 +95,9 @@ corepack pnpm --filter @paperwitha/mobile exec expo export --platform web --outp
 
 ## 当前缺口
 
-1. Mobile 只做文本阅读，没有 PDF 渲染；也没有离线缓存。
-2. core 的 agent 会话在内存里，进程重启后要重新建；只有 Chat 消息持久化。
-3. 论文页文本抽取只到“页”粒度，没有段落、图表、公式结构。
-4. 同步、插件系统、docking 布局已从仓库移除，`docs/adr` 里标记为被取代。
+1. agent 会话在内存里。core 重启要重建，且该会话之前的问答不会回灌给模型（Chat 消息已落盘）。
+2. Mobile 只做文本阅读，没有 PDF 渲染，也没有图件 UI 和离线缓存。
+3. 论文页文本抽取只到「页」粒度，没有段落、图表、公式结构。
+4. Desktop 的 core 守护只在开发路径验证，未做打包分发。
+5. 删除论文与会话是直接从磁盘移除，没有回收站。
+6. 同步、插件系统、docking 布局已从仓库移除，`docs/adr` 里标记为被取代。

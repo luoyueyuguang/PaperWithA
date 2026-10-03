@@ -25,6 +25,10 @@ PaperWithA 是本地优先的论文研究工具。核心体验：把论文导入
 - `packages/domain` 与 `packages/api-client`：跨端类型与客户端，单元测试覆盖。
 - core 存储与 ingest：Vitest 覆盖索引对齐、去重、按需抽取、PDF 文本层。
 - 端到端烟测 `pnpm probe:agent`：上传 → 建会话 → 真实提问 → 收到流式回答。
+- Web：PDF.js canvas + 文本层阅读、选区提问、流式 Chat、引用跳页、KaTeX 公式排版、
+  每篇论文独立的阅读器缩放。
+- 图件生成：图解（SVG）、动画（MP4）、幻灯片（自包含 deck.html），按能力探测开关按钮。
+- CI（`native-builds`）：`checks` + linux/windows 的 `tauri build`，两次运行均通过。
 
 ### 摘要描述的旧能力
 
@@ -33,10 +37,11 @@ PaperWithA 是本地优先的论文研究工具。核心体验：把论文导入
 
 ### 尚未实现
 
-- Mobile 的 PDF 渲染与离线缓存；Mobile 只读文本。
+- Mobile 的 PDF 渲染、图件 UI 与离线缓存；Mobile 只读文本。
 - 段落、图表、公式级的文档结构；当前只到「页」。
 - 跨设备同步、插件系统、多论文上下文、Reading Brief、OCR。
-- agent 会话的进程内持久化：进程重启后需重建，只有 Chat 消息落盘。
+- agent 会话的进程内持久化：进程重启后需重建，且该会话的历史不会回灌给模型。
+- Desktop 的打包分发；core 守护只在开发路径验证。
 
 ## 3. 技术栈
 
@@ -45,10 +50,11 @@ PaperWithA 是本地优先的论文研究工具。核心体验：把论文导入
 | 包管理 | pnpm 9 workspace |
 | core | Bun 1.3+、TypeScript、node:fs / node:crypto |
 | agent | `@oh-my-pi/pi-coding-agent` 内嵌 |
-| Web | React 19、Vite 6、pdf.js |
+| Web | React 19、Vite 6、pdf.js、KaTeX |
 | Desktop | Tauri 2、Rust 2021 |
 | Mobile | Expo 52、React Native 0.76 |
-| 测试 | Vitest、`pnpm probe:agent` 端到端烟测 |
+| 图件渲染 | `rsvg-convert`、`ffmpeg`（可选 `manim`） |
+| 测试 | Vitest、`pnpm probe:agent` 端到端烟测、GitHub Actions |
 
 ## 4. 模块图
 
