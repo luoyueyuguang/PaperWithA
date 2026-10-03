@@ -1,0 +1,20 @@
+{
+  "name": "@paperwitha/core",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/main.ts",
+    "dev": "bun run --watch src/main.ts",
+    "smoke": "bun run scripts/smoke.ts"
+  },
+  "dependencies": {
+    "@oh-my-pi/pi-coding-agent": "^18.4.12",
+    "@paperwitha/domain": "workspace:*",
+    "pdfjs-dist": "^4.10.38"
+  },
+  "devDependencies": {
+    "@paperwitha/api-client": "workspace:*",
+    "@types/bun": "^1.1.14"
+  }
+}
