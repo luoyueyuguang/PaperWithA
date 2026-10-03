@@ -1,9 +1,0 @@
-{
-  "name": "@paperwitha/platform",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
-  "main": "./src/index.ts",
-  "exports": { ".": "./src/index.ts" },
-  "dependencies": { "@paperwitha/domain": "workspace:*", "@paperwitha/workspace": "workspace:*" }
-}
