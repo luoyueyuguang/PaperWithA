@@ -1,120 +1,101 @@
 # PaperWithA Agent 接手指南
 
-本文件是 Coding Agent 的仓库入口。开始修改前先读本文件，再按“必读顺序”读取文档。所有状态结论以当前源码、测试和 `docs/next-session-handoff.md` 为准，不要沿用旧会话中的完成声明。
+本文件是 Coding Agent 的仓库入口。改动前先读本文件，再按“必读顺序”读文档。
+所有状态结论以源码、测试和 `docs/next-session-handoff.md` 为准。
 
 ## 项目定位
 
-PaperWithA 是 agent-driven 论文研究工具。PDF 放入 XDG 目录，agent（Pi subagent）分析后存结果，用户通过 Web UI 的 Terminal CLI 与 agent 交互。核心体验不是"阅读器"，而是"你有篇论文，agent 读过了，你问它"。
+PaperWithA 是一个本地优先的论文研究工具。目标体验一句话：你有篇论文，agent 读过了，你问它。
 
-当前处于架构转型期：从 PDF 阅读工作台转向 agent + 论文仓库模式。Web UI 保留 PDF 阅读（左面板），右面板已改为 Terminal CLI。
+三步闭环：把论文导入本地库 → 左栏读原文、选中文字提问 → 右栏 agent 流式回答并标注页码。
+
+Agent 不自研，直接内嵌 [oh-my-pi](https://www.npmjs.com/package/@oh-my-pi/pi-coding-agent) 的
+`createAgentSession()`，在同一个进程里跑，不依赖用户额外安装 CLI。
 
 ## 必读顺序
 
-1. `AGENTS.md`：操作约束、现状和命令。
-2. `docs/next-session-handoff.md`：最新实现状态、直接证据、阻塞和下一步。
-3. `docs/00-project-overview.md`：产品、模块、成熟度和推荐阅读路径。
-4. `docs/01-technical-architecture.md`：运行时、数据流、依赖和扩展边界。
-5. `docs/superpowers/specs/2026-07-23-paperwitha-architecture-design.md`：目标产品与验收场景。
-6. `docs/domain-model.md`：领域概念和不变量。
-7. `docs/adr/0001-*.md` 至 `0005-*.md`：已接受的架构决策。
-8. `docs/superpowers/plans/2026-07-23-paperwitha-implementation-plan.md`：Gate 顺序；注意它描述目标，不代表全部已实现。
-9. `docs/gate-0-report.md`：Gate 0 方法、指标与机器报告位置。
+1. `AGENTS.md`：本文件，操作约束与命令。
+2. `docs/next-session-handoff.md`：最新状态、已验证的证据、下一步。
+3. `docs/redesign-plan.md`：2026-10-03 重做的诊断、目标架构与迁移步骤。
+4. `docs/01-technical-architecture.md`：当前运行时、数据流、依赖边界。
+5. `docs/00-project-overview.md`：产品、模块、成熟度。
+6. `docs/domain-model.md`：领域概念与不变量。
+7. `docs/adr/`：已接受的架构决策；`0006` 记录本次重做。
 
 ## 仓库结构
 
-- `apps/web`：Web Host。Vite + 原生 TS DOM。左边 PDF 阅读器（PDF.js），右边 Terminal CLI（WebSocket 连 PTY 后端）。入口 `src/main.ts`（约 980 行）。
-- `apps/desktop`：Tauri 2 壳，加载 `apps/web/dist`。
-- `apps/mobile`：Expo / React Native 演示壳。
-- `packages/domain`：DocumentGraph / DocumentVersion / InkStroke / ReadingBrief。
-- `packages/reader-core`：Graph 缓存、PaperView、EvidenceAnchor。
-- `packages/workspace`：LayoutTree、swap / merge / split 命令和历史。
-- `packages/context`：ContextSet、ContextBuilder（词法排序 + 预算）。
-- `packages/ai-core`：ProviderManifest、ProviderClient（SSE / JSON）。
-- `packages/evidence`：Annotation。
-- `packages/storage`：StoragePort、BlobStore、JsonRepository。
-- `packages/sync`：SyncPort、SyncEnvelope、Outbox、Inbox、InMemorySyncServer。
-- `packages/plugin-contracts` / `plugin-core`：同步插件契约和 PluginHost。
-- `packages/platform`：跨端 PlatformShell。
-- `packages/agent-core`：Session / Branch / Run / Event、Sandbox、Runtime。
-- `packages/agent-runtime-node`：OMP RPC、Pi RPC、OpenCode HTTP 适配器、AgentHost。
-- `services/api`：同步 HTTP 服务（port 4120）。
-- `services/pty`：Terminal shell 后端，在 papers 目录启 /bin/bash，WebSocket（port 4121）。
-- `services/watcher`：文件监听 + Pi subagent 触发（已 revert，需恢复）。
-- `probes/gate-0`：六项确定性可行性探针和机器报告。
-- `.github/workflows/native-builds.yml`、`infra/desktop-build.Dockerfile`：原生构建入口。
+```text
+apps/web             React 19 + Vite 6：论文库、阅读器、Chat
+apps/desktop         Tauri 2 壳：加载 web 产物，Rust 侧守护 core 进程
+apps/mobile          Expo：论文列表、文本阅读、Chat
+packages/domain      跨端类型与纯函数：论文、会话、引用、证据锚点、core 事件
+packages/api-client  core 的类型化客户端（HTTP + WebSocket）
+services/core        Bun 服务：XDG 存储、文本抽取、内嵌 agent、HTTP/WS
+```
 
-## 不变量与安全边界
+## 运行时边界
 
-- 未显式加入 `ContextSet` 的文档不得进入 AI 上下文。
-- 每条未来的持久化 Chat 消息必须关联发送时的 `ContextSnapshot`；当前 Web UI 尚未完整实现该模型。
-- EvidenceAnchor 必须携带 DocumentVersion、页面、节点、字符范围和有效性。
-- PaperView 的滚动、缩放、选区属于视图实例，不属于 Document。
-- 布局移动不得改变论文滚动位置、Chat 历史或内容状态。
-- 本地事务先于同步；重复 operation 不得重复产生业务效果。
-- API Key、password、secret 不得进入 localStorage、SyncEnvelope、日志或测试 fixture。
-- Provider 请求不得静默切换供应商。
-- 插件只能通过宿主能力接口工作；不能绕过 Evidence、Storage、Sync 或平台边界。
+- **core 必须用 Bun 跑**。内嵌的 oh-my-pi SDK 依赖 Bun 全局对象与 `bun:sqlite`，Node 加载不了。
+  入口 `services/core/src/main.ts`，`package.json` 里的 `start` / `dev` 脚本已经用 `bun run`。
+- Web 与 Mobile 只通过 `@paperwitha/api-client` 访问 core，不直接读写文件。
+- Desktop 复用 web 产物；Rust 侧只做进程守护与健康检查。
 
-## 当前 UI 窗口契约
+## 存储
 
-Web 与 Desktop 共用 `apps/web/src/styles.css`：
+```text
+$XDG_DATA_HOME/paperwitha/          默认 ~/.local/share/paperwitha
+  papers/<hash12>-<文件名>           原始文件
+  index.json                        论文索引
+  text/<hash12>.json                每页文本
+  sessions/<sessionId>.json         Chat 会话
+  workspaces/<paperId>/paper.md     agent 工作目录里的论文副本
+  artifacts/<artifactId>/           生成的图解、动画、幻灯片
+```
 
-- `html`、`body`、`#app` 和 `.app-shell` 必须严格等于可视窗口高度；
-- 外层页面禁止纵向和横向滚动；
-- 论文只在 `.reader-scroll` 内滚动；
-- Chat、Brief 和论文库各自内部滚动；
-- 小于 980px 时 Assistant 使用工作区内覆盖层，不得把页面向下撑开。
+- 论文 id 是文件内容 sha256 的前 12 位，同样内容只存一份。
+- 把文件直接丢进 `papers/` 也会被索引；文本在首次读取时抽取。
+- agent 的模型与凭证沿用 `~/.omp/agent`，可用 `PAPERWITHA_AGENT_DIR` 覆盖。
+- 助手回答风格由 `services/core/src/agent.ts` 的 `STYLE_RULES` 约束；
+  用户可用 `~/.config/paperwitha/style.md` 或 `PAPERWITHA_STYLE_FILE` 追加自己的要求。
 
-任何布局修改后，至少在 `1440×900` 和 `390×844` 两个 viewport 验证 `document.body.scrollHeight === innerHeight` 且 `scrollWidth === innerWidth`。
+## 不变量
+
+- 未进入提问上下文的论文内容，不得出现在回答里。当前实现把整篇论文交给该论文自己的会话，会话之间不共享上下文。
+- 引用只认 `[p.N]` 标记，且 N 必须是该论文真实存在的页号；解析失败直接丢弃，不猜测。
+- API Key 不写入仓库、不写日志、不进 SyncEnvelope 或测试 fixture。
+- 论文页文本与 `PaperText` 是证据锚点的基准；不要让 UI 自己造第二套文本。
+- core 是唯一事实源。UI 不把业务状态写进 localStorage。
 
 ## 常用命令
 
 ```bash
 corepack pnpm install --frozen-lockfile
-corepack pnpm typecheck
-corepack pnpm exec tsc -p apps/web/tsconfig.json --noEmit
-corepack pnpm exec tsc -p apps/mobile/tsconfig.json --noEmit
-corepack pnpm exec tsc -p services/api/tsconfig.json --noEmit
-corepack pnpm test
+corepack pnpm typecheck          # packages + services/core + apps/web + apps/mobile
+corepack pnpm test               # vitest：domain、api-client、core 存储与 ingest
+corepack pnpm dev:core           # core → http://127.0.0.1:4130
+corepack pnpm dev:web            # web → http://localhost:4173（/api 代理到 core）
 corepack pnpm build:web
-corepack pnpm probe:gate0
-corepack pnpm probe:gate0:validate
-corepack pnpm --filter @paperwitha/mobile exec expo export --platform web --output-dir /tmp/paperwitha-mobile-web
-corepack pnpm --filter @paperwitha/mobile exec expo export --platform android --output-dir /tmp/paperwitha-mobile-android
-corepack pnpm --filter @paperwitha/mobile exec expo export --platform ios --output-dir /tmp/paperwitha-mobile-ios
+corepack pnpm probe:agent        # 端到端烟测：起 core、上传论文、真实提问（需要 ~/.omp 凭证）
+
 cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check
-```
-
-开发服务：
-
-```bash
-corepack pnpm dev:web
-corepack pnpm --filter @paperwitha/api start
-corepack pnpm --filter @paperwitha/pty start
-
-原生 Desktop 构建优先使用 CI 或：
-
-```bash
-docker build -f infra/desktop-build.Dockerfile -t paperwitha-desktop .
+cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
+corepack pnpm --filter @paperwitha/mobile exec expo export --platform web --output-dir /tmp/pwa-mobile-web
 ```
 
 ## 修改与验证规则
 
-- 先定位共享包是否已有契约；禁止在应用层创建第二套同义类型或状态语义。
-- 修改导出符号前检查所有调用方。
-- Web 行为变更必须真实浏览器验收；不要用只通过 TypeScript 编译替代 UI 证据。
-- Desktop 行为由 Web 改动影响时，先 `build:web`，再构建 / 启动 Tauri；旧 `dist` 不代表当前源码。
-- 同步和 Provider 边界必须覆盖成功、拒绝、错误和凭据泄露路径。
-- Gate 0 测试会故意打印 `[FAIL]`，用于验证报告校验器能拒绝坏 fixture；最终以 Vitest 退出状态和 48/48 校验结果判断。
-- 不编辑或提交 `node_modules`、`dist`、`target`、Expo export 目录和 `/tmp` 依赖环境。
-- 文档中的“目标设计”和“当前实现”必须分开描述；无法直接验证的内容标记为未验收。
+- 改导出符号前先查调用方；共享类型只在 `packages/domain` 定义一处。
+- Web 行为变更必须真实浏览器验收，不能用 TypeScript 编译代替。
+- 窗口契约：`html`、`body`、`#root`、`.app-shell` 严格等于可视窗口高度；外层不滚动；
+  论文、会话列表、Chat 各自内部滚动。至少在 `1440×900` 与 `390×844` 下验证
+  `document.body.scrollHeight === innerHeight` 且 `scrollWidth === innerWidth`。
+- Desktop 行为受 Web 影响时先 `build:web`，旧 `dist` 不代表当前源码。
+- 不提交 `node_modules`、`dist`、`target`、Expo export 目录。
+- 文档必须区分“当前实现”和“目标设计”；无法直接验证的内容标注为未验收。
 
-## 当前最重要的缺口
+## 当前缺口
 
-1. Terminal CLI 需换 xterm.js（当前 textarea + WebSocket）。
-2. Tmux ViewTree 递归切分需要从 main.ts 抽成独立模块。
-3. Library × 删除按钮 handler 未接入。
-4. paper-store 包被 revert，需恢复。
-5. services/watcher（文件监听 + Pi subagent）需恢复。
-6. Pi agent 集成：terminal 需能读取 papers/ 结果。
-7. Mobile / Desktop 仍为壳，未适配新架构。
+1. Mobile 只做文本阅读，没有 PDF 渲染；也没有离线缓存。
+2. core 的 agent 会话在内存里，进程重启后要重新建；只有 Chat 消息持久化。
+3. 论文页文本抽取只到“页”粒度，没有段落、图表、公式结构。
+4. 同步、插件系统、docking 布局已从仓库移除，`docs/adr` 里标记为被取代。

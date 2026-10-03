@@ -1,6 +1,6 @@
 # ADR-0001：跨端技术栈与共享边界
 
-- 状态：Accepted
+- 状态：Accepted（ADR-0006 修订：共享包收敛为 `domain` + `api-client`）
 - 范围：Web、桌面、平板、手机
 - 本决策不包含业务功能实现
 

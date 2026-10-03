@@ -1,6 +1,6 @@
 # ADR-0005：通用插件机制
 
-- 状态：Accepted
+- 状态：Superseded（由 ADR-0006 取代；`plugin-core` 与 `plugin-sdk` 已删除）
 - 范围：同步、AI 供应商、导入、导出和阅读器适配
 
 ## 决策

@@ -1,374 +1,153 @@
-# PaperWithA 技术架构
+# PaperWithA 技术架构（当前实现）
 
-- 文档日期：2026-07-24
-- 范围：当前仓库真实实现；目标能力单独标注
-- 读者：技术负责人、实现 Agent、Reviewer、跨端工程师
+- 文档日期：2026-10-03
+- 描述对象：仓库里现在能跑的代码，不含目标设计
 
-## 1. 架构结论
+## 1. 进程与端口
 
-PaperWithA 是 pnpm 管理的 TypeScript monorepo，采用“平台 Host → 共享业务包 → 外部端口”的依赖方向：
+| 进程 | 运行时 | 端口 | 入口 |
+|---|---|---|---|
+| core | Bun 1.3+ | 4130（`PAPERWITHA_PORT` 可改） | `services/core/src/main.ts` |
+| web dev | Vite 6 | 4173 | `apps/web/vite.config.ts` |
+| desktop | Tauri 2 | 跟随 core | `apps/desktop/src-tauri` |
+| mobile | Expo | 跟随 core | `apps/mobile` |
 
-- Web Host 直接组合共享包，是当前功能最完整的运行时；
-- Tauri Desktop Host 加载 Web production bundle，Rust 只保留原生边界入口；
-- Expo Mobile Host 使用 React Native UI 和最小 PlatformShell；
-- 同步 API 是独立 Node HTTP 进程，但当前存储为内存实现；
-- Gate 0 探针独立验证 PDF、Graph、Docking、Provider、Context 和 Sync 高风险假设。
+只有 core 会写磁盘。Web、Mobile、Desktop 都通过 `packages/api-client` 说话。
 
-当前代码不是完整的 Clean Architecture：Web Host 在单一入口中直接处理 UI、状态、PDF 导入、Provider 和同步。共享包提供了可演进边界，但尚未由统一 application service 或 event log 组织。
+## 2. core 的模块
 
-## 2. 系统架构图
-
-```mermaid
-graph TB
-    subgraph Hosts[平台 Hosts]
-      Web[Web Host\nVite + TypeScript DOM]
-      Desktop[Tauri Host\nRust + Web bundle]
-      Mobile[Expo Host\nReact Native]
-      API[Sync API\nNode HTTP]
-    end
-
-    subgraph Shared[共享 TypeScript 包]
-      Domain[domain]
-      Reader[reader-core]
-      Evidence[evidence]
-      Workspace[workspace]
-      Context[context]
-      AI[ai-core]
-      Storage[storage]
-      Sync[sync]
-      PluginContracts[plugin-contracts]
-      PluginCore[plugin-core]
-      Platform[platform]
-    end
-
-    subgraph External[外部依赖与资源]
-      PDF[pdfjs-dist]
-      BrowserStore[localStorage]
-      Provider[Provider endpoint]
-      Native[Tauri / OS]
-      Metro[Expo Runtime]
-    end
-
-    Desktop --> Web
-    Desktop --> Native
-    Web --> Domain
-    Web --> Reader
-    Web --> Evidence
-    Web --> Context
-    Web --> AI
-    Web --> Storage
-    Web --> Sync
-    Web --> PDF
-    Web --> BrowserStore
-    Web --> Provider
-
-    Mobile --> Platform
-    Mobile --> Metro
-    Platform --> Domain
-    Platform --> Workspace
-
-    Reader --> Domain
-    Evidence --> Reader
-    PluginContracts --> Sync
-    PluginCore --> PluginContracts
-    PluginCore --> Sync
-    API --> Sync
+```text
+services/core/src/
+  main.ts              组装依赖、启动服务、处理信号
+  config.ts            XDG 路径、端口、agent 目录
+  ingest.ts            PDF 文本层抽取、纯文本分页
+  agent.ts             内嵌 oh-my-pi 会话管理与事件转发
+  server.ts            Bun.serve 路由、WebSocket 广播、静态产物托管
+  store/
+    json-file.ts       原子 JSON 读写
+    papers.ts          论文索引、文件、文本缓存、目录对齐
+    sessions.ts        Chat 会话落盘
 ```
 
-依赖方向的重要性质：共享包不依赖 Web DOM 或 Tauri；`storage` 的 BrowserStoragePort 是目前唯一明确的平台实现之一；应用 Host 可以依赖多个共享包。
+### 2.1 为什么必须用 Bun
 
-## 3. 仓库与模块职责
+`@oh-my-pi/pi-coding-agent` 的 `exports` 直接指向 TypeScript 源码，且用到 `bun:sqlite`、
+`Bun.hash`、`Bun.env` 等 Bun 全局对象，`engines.bun >= 1.3.14`。Node 既不能加载 `.ts` 源，也不能提供这些 API。
+因此 `services/core/package.json` 的 `start` / `dev` 脚本都用 `bun run`。
 
-### 3.1 Host 层
+`store/` 与 `ingest.ts` 只用 `node:` 模块，所以可以在 Vitest（Node 20）里直接测试。
+`agent.ts` 是唯一依赖 Bun 的模块，用 `pnpm probe:agent` 做端到端验证。
 
-#### Web Host
+### 2.2 端口与网络
 
-当前 Web Host 使用 Vite 和原生 DOM 模板。它负责：
+core 只监听 `127.0.0.1`。CORS 允许所有来源，便于移动端直连；不含鉴权，不要暴露到公网。
 
-- AppState 读取、迁移默认值和 localStorage 写入；
-- PDF / 文本导入和 DocumentGraph 创建；
-- 论文库、阅读器、Chat、Brief、Provider 配置和同步状态渲染；
-- selectionchange、scroll、form submit 等浏览器事件；
-- 调用 ContextBuilder、ProviderClient、Annotation、PaperView 和 HttpSyncPort。
+## 3. HTTP 与 WebSocket 契约
 
-窗口布局契约为固定 viewport 外壳，论文、Chat、Brief 和论文库内部独立滚动。Desktop 复用该 CSS，因此页面高度错误会同时影响浏览器和客户端。
-
-#### Tauri Desktop Host
-
-Rust Host 当前仅创建 Tauri Builder 并加载配置。配置指定：
-
-- production frontend 为 Web `dist`；
-- 默认窗口 1440×900，最小 960×640；
-- bundle identifier 为 `com.paperwitha.desktop`；
-- Linux / Windows CI 构建入口已存在。
-
-文件系统、密钥链、系统窗口和原生事件还没有 command 实现。
-
-#### Expo Mobile Host
-
-Mobile Host 当前维护本地 `reader | brief` UI 状态，通过 PlatformShell 打开内置 Demo Paper。它证明 workspace package 可被 Metro 消费并可构建三平台 bundle，但尚未实现正式移动 Host 能力。
-
-#### Sync API
-
-Sync API 暴露 push / pull 两个职责接口：
-
-- push：要求数组 payload，交给 InMemorySyncServer；
-- pull：读取可选 cursor，返回增量 entries；
-- OPTIONS：支持当前宽松 CORS；
-- 其他路由返回 not-found；解析与业务错误返回 400。
-
-该 API 无认证、限流、持久化和 workspace 隔离，只适合原型与测试。
-
-### 3.2 共享领域层
-
-#### Domain
-
-最小 DocumentGraph 由 graphId、documentId、documentVersionId 和页面集合构成。页面包含文本、页号、可选 layout 指标和 confidence。完整 Section / Paragraph / Figure 等目标模型尚未实现。
-
-#### Reader Core
-
-- DocumentGraphCache：按 documentVersionId 共享异步解析 Promise；失败时清除缓存，允许重试。
-- visiblePageNumbers：计算视口中心页与 buffer 页。
-- PaperViewState：独立保存 scrollAnchor、zoom、selectedAnchorId。
-- EvidenceAnchor 创建：检查版本、页范围、顺序和字符 offset，生成跨页起止节点范围。
-
-#### Evidence
-
-Annotation 保存 document / version / anchor、类型、选中文本、note、tags 和时间。创建时拒绝无效 anchor 和空文本。
-
-#### Workspace
-
-LayoutTree 由 stack 和 split 节点组成；命令支持 swap、mergeTab 和 splitPane；LayoutHistory 管理历史。目标中的 detach、restore、redo 完整 Host 行为尚未接入产品。
-
-#### Context
-
-ContextBuilder 的确定性顺序：
-
-1. 只保留 ContextSet.documents 内的来源；
-2. 按 fixedSourceIds 顺序保留固定来源；
-3. 固定来源超预算则显式返回 budget_exceeded；
-4. 普通来源按查询词命中数排序，相同分数按 sourceId；
-5. 不能容纳的来源进入 omittedSourceIds。
-
-当前 token 估算是空白分词计数，不是具体模型 tokenizer。
-
-### 3.3 外部端口与扩展层
-
-#### Provider
-
-ProviderManifest 允许三种 mapping：JSON Pointer、literal 和 list。校验器拒绝不支持的 API 版本、脚本 mapping、未声明 endpoint domain 和不完整认证。
-
-ProviderClient：
-
-- 构造时验证 manifest；
-- API key provider 必须获得只存在运行时的 credential；
-- HTTP JSON 通过 responseMapping 产生单个 delta + done；
-- SSE 按空行切事件，解析 `data:`，应用声明式 responseMapping；
-- 非 2xx 或 malformed stream 抛出结构化错误；
-- 不包含自动供应商 fallback。
-
-#### Sync
-
-SyncEnvelope 携带 operationId、actor / device、entity、baseRevision、payload、createdAt 和可选 serverSequence / tombstone。
-
-- Outbox 以 operationId 去重，并在 enqueue 前递归拒绝 apiKey、api_key、secret、password；
-- IdempotentInbox 防止重复投影并检查 baseRevision；
-- InMemorySyncServer 分配单调 serverSequence 和 revision；
-- HttpSyncPort 将 SyncPort 映射到 HTTP push / pull。
-
-#### Plugin
-
-当前 PluginManifest 只有 pluginId、version、capabilities；SyncPlugin 只有 start / pause / stop。PluginHost 支持安装、卸载和同步插件激活，并强制单 Workspace 仅一个 active sync target。目标中的 capability grants、网络白名单、任务取消和隔离尚未实现。
-
-#### Storage
-
-StoragePort 是同步 key-value 接口；现有 MemoryStoragePort、BrowserStoragePort 和 JsonRepository。JsonRepository 在 JSON 损坏时删除坏值并返回 fallback。
-
-## 4. 运行时启动链路
-
-### 4.1 Web
-
-```mermaid
-sequenceDiagram
-    participant Browser
-    participant Vite as Web Bundle
-    participant Repo as JsonRepository
-    participant UI as Web Host
-
-    Browser->>Vite: 加载 index.html 与 main bundle
-    Vite->>Repo: 读取 paperwitha.web.v1
-    Repo->>Browser: localStorage.getItem
-    Repo-->>UI: AppState 或 fallback
-    UI->>UI: render()
-    UI->>Browser: 注册 UI 与 selectionchange 事件
-    Browser-->>UI: 用户导入 / 阅读 / Chat / 同步
+```text
+GET    /api/health                      { ready, papers, agent, renderers }
+GET    /api/papers                      PaperSummary[]
+POST   /api/papers                      multipart，字段 file → PaperSummary
+GET    /api/papers/:id/text             PaperText
+GET    /api/papers/:id/file             原始文件字节
+DELETE /api/papers/:id                  204（同时删除文本、会话与图件）
+GET    /api/sessions?paperId=           ChatSession[]
+POST   /api/sessions                    { paperId, title? } → ChatSession
+DELETE /api/sessions/:id                204（同时释放 agent 会话并删除图件）
+POST   /api/sessions/:id/prompt         { text } → { runId }，202
+POST   /api/sessions/:id/abort          204
+GET    /api/sessions/:id/artifacts      Artifact[]
+POST   /api/sessions/:id/artifacts      { kind, messageId? } → Artifact，202
+DELETE /api/artifacts/:id               204
+GET    /api/artifacts/:id/file/<path>   产物文件（图片 / 视频 / deck.html）
+WS     /api/events                      CoreEvent 单向事件流
 ```
 
-Web Host 在模块加载尾部注册一次 selectionchange，再执行首次 render。每次 render 只重新绑定当前 DOM 节点事件，避免 document 级监听器重复累积。
+`renderers` 是 `{ svg, video, manim }`，UI 据此禁用做不到的按钮。
 
-### 4.2 Desktop
+命令走 HTTP，事件只走 WebSocket，两个方向不混用。
 
-```mermaid
-sequenceDiagram
-    participant OS
-    participant Tauri
-    participant Dist as Web dist
-    participant UI as Web Host
+## 4. 数据流
 
-    OS->>Tauri: 启动 paperwitha-desktop
-    Tauri->>Dist: 加载 production frontend
-    Dist->>UI: 执行与浏览器相同的 main bundle
-    UI-->>Tauri: 渲染固定 viewport 工作区
+### 4.1 导入
+
+`POST /api/papers` → `PaperStore.add()`：
+
+1. sha256 取前 12 位作为 id；已存在同 id 直接返回；
+2. 写入 `papers/<id>-<文件名>`；
+3. 抽取每页文本写入 `text/<id>.json`；
+4. 追加索引并原子写 `index.json`。
+
+启动时 `PaperStore.open()` 会把 `papers/` 目录里多出来的文件补进索引，把文件已丢失的条目删掉。
+目录里直接丢的文件页数为 0，首次 `getText()` 时才抽取并回填。
+
+### 4.2 提问
+
+1. `startRun()` 检查会话是否已有 run，有就返回 409；
+2. 用户消息与空助手消息立刻落盘，广播 `run-started`；
+3. 异步调 `EmbeddedAgent.prompt()`；
+4. `text-delta` 实时广播；`tool_execution_start/end` 转成 `tool-start` / `tool-end`；
+5. 结束后解析引用、去掉 `[p.N]` 标记、落盘、广播 `message-completed` 与 `run-completed`；
+6. 异常路径广播 `run-failed`，错误文本原样给用户。
+
+### 4.3 agent 会话
+
+- 每个 Chat 会话对应一个进程内的 `AgentSession`，`sessionManager: SessionManager.inMemory()`。
+- 工作目录 `workspaces/<paperId>/`，里面写一份 `paper.md`，每页以 `## Page N` 开头。
+- 第一轮提问把全文塞进消息（正文 ≤ 24000 字符时），否则让 agent 自己读 `paper.md`。
+- 系统提示要求：用提问语言回答；引用标注 `[p.N]`；不许编造页码。
+- 模型与凭证沿用 `~/.omp/agent/agent.db`。
+- 回答风格由 `agent.ts` 里的 `STYLE_RULES` 约束：直接回答、默认两三句、不用标题和加粗、
+  不分点、禁用报告腔词句。另有 `MATH_RULES` 要求公式写成 LaTeX（`$S_t$`、`$$...$$`），
+  不要用拍平写法。用户可以用 `~/.config/paperwitha/style.md`
+  （或 `PAPERWITHA_STYLE_FILE` 指向的文件）追加自己的要求，内容会追加到系统提示词后面。
+- 会话切换论文时销毁旧 `AgentSession` 并重建。
+
+## 5. 存储布局
+
+```text
+$XDG_DATA_HOME/paperwitha/
+  papers/<hash12>-<文件名>
+  index.json
+  text/<hash12>.json
+  sessions/<sessionId>.json
+  workspaces/<paperId>/paper.md
+  artifacts/<artifactId>/meta.json + 产物文件
 ```
 
-当前没有 Rust command 往返，因此产品逻辑与 Web 完全一致。
+写 JSON 一律走「临时文件 + rename」，避免半截文件。
 
-### 4.3 Mobile
+## 6. 图件生成
 
-```mermaid
-sequenceDiagram
-    participant Expo
-    participant App
-    participant Shell as PlatformShell
+三种产物，作者都是 agent，格式由 core 固定并校验。
 
-    Expo->>App: 注册 React Native 根组件
-    App->>Shell: createMobileShell(initial workspace)
-    App-->>Expo: 渲染欢迎页
-    Expo->>App: 用户打开 Demo
-    App->>Shell: openPaper(document)
-    App-->>Expo: 显示 Paper / Brief 视图
-```
+| 类型 | agent 写什么 | core 做什么 |
+|---|---|---|
+| `diagram` | `diagram.svg`（1280×720，自包含） | 直接作为 `entry` 展示 |
+| `animation` | `frames/*.svg` + `frames.json`；若 `manim` 可用则直接产出 `animation.mp4` | 帧序列走 `rsvg-convert` 转 PNG，再 `ffmpeg` 拼 MP4（1280×720 h264） |
+| `slides` | `slides/*.svg` + `deck.json` | 校验文件存在，合成无脚本的 `deck.html` |
 
-## 5. 数据流图
+- 每个图件一个一次性 `AgentSession`，工作目录是产物目录，里面先放 `paper.md` 与 `context.md`，
+  提示词与聊天会话共用同一套风格约束（`artifacts/prompt.ts`）。
+- 清单解析在 `manifests.ts`，纯函数、有单测；字段非法或帧数越界直接判失败，
+  不静默产出空视频。路径只接受相对路径且禁止 `..`。
+- 渲染能力由 `detectRenderers()` 启动时探测，结果进 `/api/health`。
+  缺工具时按钮置灰，不假装能生成。
+- `GET /api/artifacts/:id/file/*` 一律加 `nosniff`；`.html` 额外加
+  `Content-Security-Policy: sandbox; default-src 'none'`，避免 agent 写的页面碰到 core 接口。
 
-```mermaid
-flowchart LR
-    File[PDF / TXT / MD] --> Parser[Web Importer]
-    Parser --> Graph[DocumentGraph]
-    Graph --> Paper[StoredPaper + PaperView]
-    Paper --> State[AppState]
-    State --> Local[Browser localStorage]
+## 7. 错误处理
 
-    Selection[用户选区] --> Anchor[EvidenceAnchor]
-    Anchor --> Annotation[Annotation]
-    Selection --> Sources[ContextSource]
-    Graph --> Sources
-    Sources --> Builder[ContextBuilder]
-    Builder --> Prompt[ProviderChatRequest]
-    Prompt --> Client[ProviderClient]
-    Client --> SSE[SSE / JSON events]
-    SSE --> Message[ChatMessage UI]
+- 存储层返回 `null` 而不是抛异常表示「没有」；真实 IO 错误继续上抛。
+- HTTP 层统一 `{ error: string }`，前端直接展示。
+- agent 失败不会破坏会话：助手消息保留已流出的内容，错误另发 `run-failed`。
+- 引用页码不在论文页范围内时丢弃，不猜测。
 
-    State --> Envelope[SyncEnvelope]
-    Envelope --> Http[HttpSyncPort]
-    Http --> API[Sync API]
-    API --> Memory[InMemorySyncServer]
-```
+## 8. 扩展边界
 
-关键缺口：ChatMessage 目前没有持久 ContextSnapshot；同步发送的是整个简化 Workspace payload，而不是本地 event log 的细粒度操作。
-
-## 6. Provider 请求链路
-
-```mermaid
-sequenceDiagram
-    participant UI as Web Chat
-    participant Context as ContextBuilder
-    participant Client as ProviderClient
-    participant Remote as Provider endpoint
-
-    UI->>Context: ContextSet + ContextSources + budget
-    Context-->>UI: selected / omitted / status
-    UI->>Client: model + message history
-    Client->>Client: manifest / domain / auth 前置校验
-    Client->>Remote: 声明式 mapping 后的 POST
-    Remote-->>Client: SSE 或 JSON
-    Client-->>UI: delta ... done
-    Note over UI,Remote: 失败直接显示，不执行 fallback
-```
-
-隐私边界：API Key 只保存在 ProviderConfig 运行时对象中，不写入 AppState；SyncEnvelope 对常见敏感键再次拒绝。
-
-## 7. 同步请求链路
-
-```mermaid
-sequenceDiagram
-    participant Web
-    participant Port as HttpSyncPort
-    participant API as Sync API
-    participant Store as InMemorySyncServer
-
-    Web->>Port: push([SyncEnvelope])
-    Port->>API: JSON request
-    API->>Store: push entries
-    Store->>Store: 敏感字段 / operationId / revision 检查
-    Store-->>API: accepted / duplicate / conflict
-    API-->>Port: push results
-    Web->>Port: pull(cursor)
-    Port->>API: 增量请求
-    API->>Store: pull(cursor)
-    Store-->>Web: ordered entries + next cursor
-```
-
-服务重启会清空 operations、revisions 和 sequence；生产化前必须替换为持久 operation log。
-
-## 8. 状态与持久化
-
-### Web AppState
-
-当前 AppState 保存：
-
-- papers：每篇论文的 graph、view、chat、annotations、brief；
-- activePaperId、activeTab；
-- sidebar / assistant 开关；
-- selectedText、selectedPage；
-- contextSourceIds 与 contextTexts。
-
-ProviderConfig、syncEndpoint、syncCursor 和 syncStatus 是会话内变量，不持久化。整份 AppState 同步 JSON 写入 localStorage，适合当前 Demo 规模，不适合大型 DocumentGraph。
-
-### PlatformShell
-
-PlatformShell 通过 structuredClone 隔离读写，支持 getState、subscribe、openPaper 和 setLayout。它是跨端演示边界，不是完整领域 store。
-
-## 9. 错误处理与降级
-
-- localStorage JSON 损坏：删除坏值并使用 fallback；
-- PDF 导入失败：Web alert，未创建论文；
-- 无 text layer 页面：写入明确 page-only fallback 文本和低 confidence；产品尚未触发 OCR；
-- Context 固定来源超预算：返回 budget_exceeded，不静默删除；
-- Provider 非 2xx / malformed stream：Chat 显示错误，不切换供应商；
-- Sync 失败：状态显示 offline 并 alert，本地数据保留；
-- 插件目标冲突：激活前拒绝第二个同步目标。
-
-## 10. 构建、测试与发布
-
-### TypeScript / Web
-
-根命令负责 strict typecheck、Vitest、Vite build 和 Gate 0。Web、Mobile、API 另有独立 tsconfig 检查。
-
-### Desktop
-
-Tauri 生产构建必须先生成 Web dist。CI 使用 Ubuntu 24.04 / Windows 2022；Linux Dockerfile安装 WebKitGTK、librsvg 和相关原生依赖。当前宿主已产出 Linux DEB / RPM 并完成进程启动烟测。
-
-### Mobile
-
-Expo export 已验证 Web、Android 和 iOS JavaScript / Hermes bundle；这不等于设备上的文件、触摸、SQLite 或安全存储验收。
-
-### 测试层级
-
-- 包级行为测试：DocumentGraph、PaperView、selection、layout、context、provider、evidence、storage、sync、plugin、platform；
-- HTTP 边界测试：Provider 本地 SSE、Sync API push / pull；
-- Gate 0：六项 deterministic probe；
-- 浏览器人工自动化验收：Web 主要流程和窗口尺寸；当前尚未固化为仓库内 E2E suite。
-
-## 11. 架构债务与演进建议
-
-1. 将 Web 单文件 Host 拆为 importer、state repository、reader view、chat service、provider settings 和 sync coordinator；先保留行为，再迁移框架。
-2. 决定正式 Web Host 是否继续原生 DOM 或按 ADR 切回 React；不要长期维持设计文档和实现两套事实。
-3. 用正式 ChatSession / ContextSnapshot / CitationReference 替换 `StoredPaper.chat` 简化模型。
-4. 用 ReadingBriefVersion + user overlay 替换字符串 brief。
-5. 将 PDF 解析改为首屏优先、按需页面解析和 DocumentGraphCache；把 Gate 0 OCR 接入明确用户流程。
-6. 将 LayoutTree 与 Dockview Host 接通，并按命令日志实现 undo / redo / restore / detach。
-7. 将同步服务替换为持久 operation log，增加 workspace 隔离、认证、请求限制和冲突恢复。
-8. 扩展 PluginManifest 与 CapabilityGrant，并实现取消、超时、进度、并发和输出大小限制。
-9. Desktop 增加文件、密钥链和原生窗口命令；Mobile 增加 ReaderAdapter、SQLite 和安全存储。
-10. 把正式首版验收场景固化为 Web / Desktop / Mobile E2E，关闭 Gate 时保留机器证据。
+- 想换 agent 后端：改 `agent.ts`，HTTP 与存储契约不变。
+- 想加新的论文来源：`PaperStore.add()` 是唯一入口。
+- Web 与 Mobile 不共享组件，只共享 `packages/domain` 的类型与纯函数、以及 `packages/api-client`。
+- 回答里的公式由 `packages/domain` 的 `splitMath()` 切分：Web 交给 KaTeX 排版
+  （`apps/web/src/components/MessageText.tsx`），Mobile 不做排版，用 `stripMathDelimiters()`
+  去掉定界符后按纯文本显示。

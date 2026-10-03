@@ -1,6 +1,6 @@
 # ADR-0002：可停靠工作区与多窗口模型
 
-- 状态：Accepted
+- 状态：Superseded（由 ADR-0006 取代）
 - 范围：论文、Reading Brief、Chat、翻译结果、批注和论文多视图
 
 ## 决策
