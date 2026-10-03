@@ -4,24 +4,16 @@
   "type": "module",
   "packageManager": "pnpm@9.15.0",
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p services/core/tsconfig.json && tsc --noEmit -p apps/web/tsconfig.json && tsc --noEmit -p apps/mobile/tsconfig.json",
     "test": "vitest run",
-    "dev:web": "vite --config apps/web/vite.config.ts",
-    "build:web": "vite build --config apps/web/vite.config.ts",
-    "probe:gate0": "tsx probes/gate-0/runner.ts",
-    "probe:gate0:list": "tsx probes/gate-0/runner.ts --list",
-    "probe:gate0:validate": "tsx probes/gate-0/validate-reports.ts",
-    "probe:gate0:capabilities": "tsx probes/gate-0/capabilities.ts"
+    "dev:core": "corepack pnpm --filter @paperwitha/core dev",
+    "dev:web": "corepack pnpm --filter @paperwitha/web dev",
+    "start:core": "corepack pnpm --filter @paperwitha/core start",
+    "build:web": "corepack pnpm --filter @paperwitha/web build",
+    "probe:agent": "corepack pnpm --filter @paperwitha/core smoke"
   },
   "devDependencies": {
-    "@tesseract.js-data/eng": "^1.0.0",
-    "@types/jsdom": "^21.1.7",
     "@types/node": "^20.17.0",
-    "dockview-core": "^7.0.4",
-    "jsdom": "^25.0.1",
-    "pdfjs-dist": "^4.10.38",
-    "tesseract.js": "^7.0.0",
-    "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vite": "6.4.1",
     "vitest": "^2.1.8"

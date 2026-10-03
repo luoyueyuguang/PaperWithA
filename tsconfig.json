@@ -1,20 +1,19 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "strict": true,
     "noEmit": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "skipLibCheck": true,
-    "lib": ["ES2024"],
+    "verbatimModuleSyntax": true,
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "types": ["node", "vitest/globals"]
   },
   "include": [
     "packages/*/src/**/*.ts",
-    "packages/*/tests/**/*.ts",
-    "services/*/src/**/*.ts",
-    "probes/**/*.ts"
+    "packages/*/tests/**/*.ts"
   ]
 }
